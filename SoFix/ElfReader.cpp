@@ -42,8 +42,8 @@ bool ElfReader::Load()
 	}
 	else
 	{
-		//TODO: dump后的文件可能没有Ehdr(通过修改LOAD段和PHDR段), 可以通过so文件来获取头部, 这里先不考虑
-
+		//TODO: dump后的文件可能没有Ehdr(通过修改LOAD段和PHDR段), 可以通过so文件来获取头部, 暂时不考虑
+		
 		return true;
 	}
 }
