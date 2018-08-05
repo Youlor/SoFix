@@ -1,6 +1,7 @@
 #include "Helper.h"
 #include "ElfReader.h"
 #include "QTextStream"
+#include "ElfFixer.h"
 
 #define QSTR8BIT(s) (QString::fromLocal8Bit(s))
 
@@ -20,7 +21,7 @@ void Helper::elfFixNormalSo()
 	qout << QSTR8BIT("请输入正常so文件路径:") << endl;
 	qin >> sopath;
 
-	elfFixSo(sopath, false);
+	elfFixSo(sopath.toLocal8Bit().toStdString().c_str(), sopath.toLocal8Bit().toStdString().c_str());
 }
 
 void Helper::elfFixDumpSo()
@@ -28,19 +29,41 @@ void Helper::elfFixDumpSo()
 	
 }
 
-void Helper::elfFixSo(QString &sopath, bool dump)
+bool Helper::elfFixSo(const char *sopath, const char *fixpath)
 {
-	ElfReader elfReader(sopath.toStdString().c_str(), dump);
+	ElfReader elf_reader(sopath);
 	QTextStream qout(stdout);
 
-	if (elfReader.Load() && !dump)
+	if (elf_reader.Load())
 	{
-		QString loadedpath = sopath + ".loaded";
+		QString loadedpath = QSTR8BIT(sopath) + ".loaded";
 		QFile loadedFile(loadedpath);
 		if (loadedFile.open(QIODevice::ReadWrite))
 		{
-			loadedFile.write((char *)elfReader.load_start(), elfReader.load_size());
+			loadedFile.write((char *)elf_reader.load_start(), elf_reader.load_size());
 			qout << QSTR8BIT("加载成功!加载后文件路径: ") + loadedpath << endl;
+
+			const char* bname = strrchr(sopath, '\\');//返回最后一次出现"/"之后的字符串, 即获取不含路径的文件名
+			soinfo* si = soinfo_alloc(bname ? bname + 1 : sopath);//分配soinfo内存, 将内存初始化为0, name拷贝
+			if (si == NULL) 
+			{
+				return NULL;
+			}
+
+			//初始化soinfo的其他字段
+			si->base = elf_reader.load_start();
+			si->size = elf_reader.load_size();
+			si->load_bias = elf_reader.load_bias();
+			si->flags = 0;
+			si->entry = 0;
+			si->dynamic = NULL;
+			si->phnum = elf_reader.phdr_count();
+			si->phdr = elf_reader.loaded_phdr();
+
+			ElfFixer elf_fixer(si, elf_reader.ehdr(), fixpath);
+			elf_fixer.fix();
 		}
 	}
+
+	return true;
 }

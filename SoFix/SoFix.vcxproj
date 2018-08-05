@@ -93,15 +93,19 @@
     </QtMoc>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="ElfFixer.cpp" />
     <ClCompile Include="ElfReader.cpp" />
     <ClCompile Include="Helper.cpp" />
+    <ClCompile Include="linker.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="Util.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="ElfFixer.h" />
     <ClInclude Include="ElfReader.h" />
     <ClInclude Include="exec_elf.h" />
     <ClInclude Include="Helper.h" />
+    <ClInclude Include="linker.h" />
     <ClInclude Include="Util.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

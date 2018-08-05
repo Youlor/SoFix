@@ -11,7 +11,7 @@ void * Util::mmap(void *addr, uint32_t size, QFile &file, uint32_t offset)
 		ret = VirtualAlloc(NULL, size, MEM_COMMIT, PAGE_READWRITE);
 		assert(((uint32_t)ret % 0x1000 == 0));
 		qint64 rc = file.read((char *)ret, size);
-		if (rc != size)
+		if (rc < 0)
 		{
 			VirtualFree(ret, size, MEM_DECOMMIT);
 			return nullptr;

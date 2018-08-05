@@ -1,6 +1,8 @@
 #pragma once
 #include <stdint.h>
 
+#pragma pack(push, 1)
+
 typedef uint8_t		Elf_Byte;
 
 typedef uint32_t	Elf32_Addr;
@@ -300,10 +302,10 @@ typedef struct {
 //4. 文件中可能包含非活动空间, 不属于任何头部和节区
 
 //sh_type		sh_link									sh_info
-//SHT_DYNAMIC	该节所用到的字符串表的节区头部索引							0
-//SHT_HASH		该表所用到的符号表的节区头部索引							0
-//SHT_REL		相关符号表的节区头部索引							重定位所适用的节区头部索引
-//SHT_SYMTAB	相关字符串表的节区头部索引							最后一个局部符号的符号表索引值加一
+//SHT_DYNAMIC	该节所用到的字符串表的节区头部索引				0
+//SHT_HASH		该表所用到的符号表的节区头部索引				0
+//SHT_REL		相关符号表的节区头部索引				重定位所适用的节区头部索引
+//SHT_SYMTAB	相关字符串表的节区头部索引			最后一个局部符号的符号表索引值加一
 //SHT_DYNSYM	同上											同上
 
 //字符串表(String Table): 连续的0结尾的字符串, 包含节区名称, 符号名称, char *
@@ -379,7 +381,8 @@ typedef struct {
 #define SHT_GNU_versym	     SHT_SUNW_versym
 #define SHT_HIOS	     0x6fffffff
 #define SHT_LOPROC	     0x70000000 /* Processor-specific range */
-#define SHT_AMD64_UNWIND     0x70000001 /* unwind information */
+#define SHT_AMD64_UNWIND 0x70000001 /* unwind information */
+#define SHT_AMMEXIDX     0x70000001 /* unwind information */
 #define SHT_HIPROC	     0x7fffffff
 #define SHT_LOUSER	     0x80000000 /* Application-specific range */
 #define SHT_HIUSER	     0xffffffff
@@ -512,28 +515,27 @@ typedef struct {
 
 /*
 * Dynamic Section structure array
+* 有以下类型: 
+* DT_NULL: 结束标志(必需)
+* DT_NEEDED: 依赖库, d_val存放依赖库名称字符串在DT_STRTAB中的偏移(可选)
+* DT_HASH: 符号哈希表, d_ptr存放虚拟地址(必需)
+* DT_STRTAB: 字符串表, d_ptr存放虚拟地址(必需)
+* DT_STRSZ: 字符串表的大小, d_val存放字节数(必需)
+* DT_SYMTAB: 符号表, d_ptr存放虚拟地址(必需), 类型为Elf32_Sym
+* DT_INIT: 初始化函数, d_ptr存放虚拟地址
+* DT_SYMBOLIC: 影响函数soinfo_do_lookup查找符号的顺序
+* DT_REL: 重定位表, dt_ptr存放重定位表的地址, 类型为Elf32_Rel
+* DT_RELSZ: 重定位表的大小, d_val存放字节数
+* DT_PLTREL: 重定位项的类型, d_val表示DT_REL或DT_RELA, 这里只支持DT_REL
+* DT_TEXTREL: 是否需要重定位
+* DT_JMPREL: 重定位表, d_ptr存放重定位表的地址, 类型为Elf32_Rel
+* DT_PLTRELSZ: 重定位表的大小, d_val存放字节数
+* DT_INIT_ARRAY: 初始化函数数组, d_ptr中存放虚拟地址
+* DT_INIT_ARRAYSZ: 初始化函数数组的大小, d_val中存放字节数
+* DT_PLTGOT: PLT过程偏移表(R_ARM_JMP_SLOT), GOT全局偏移表(R_ARM_GOT), d_ptr中存放虚拟地址
 */
 typedef struct {
 	Elf32_Word		d_tag;	/* entry tag value 表明哪一类的Dynamic节 */
-							//有以下类型
-							//	DT_NULL: 结束标志(必需)
-							//	DT_NEEDED: 依赖库, d_val存放依赖库名称字符串在DT_STRTAB中的偏移(可选)
-							//	DT_HASH: 符号哈希表, d_ptr存放虚拟地址(必需)
-							//	DT_STRTAB: 字符串表, d_ptr存放虚拟地址(必需)
-							//	DT_STRSZ: 字符串表的大小, d_val存放字节数(必需)
-							//	DT_SYMTAB: 符号表, d_ptr存放虚拟地址(必需), 类型为Elf32_Sym
-							//	DT_INIT: 初始化函数, d_ptr存放虚拟地址
-							//	DT_SYMBOLIC: 影响函数soinfo_do_lookup查找符号的顺序
-							//	DT_REL: 重定位表, dt_ptr存放重定位表的地址, 类型为Elf32_Rel
-							//	DT_RELSZ: 重定位表的大小, d_val存放字节数
-							//	DT_PLTREL: 重定位项的类型, d_val表示DT_REL或DT_RELA, 这里只支持DT_REL
-							//	DT_TEXTREL: 是否需要重定位
-							//	DT_JMPREL: 重定位表, d_ptr存放重定位表的地址, 类型为Elf32_Rel
-							//	DT_PLTRELSZ: 重定位表的大小, d_val存放字节数
-							//	DT_INIT_ARRAY: 初始化函数数组, d_ptr中存放虚拟地址
-							//	DT_INIT_ARRAYSZ: 初始化函数数组的大小, d_val中存放字节数
-							//	DT_PLTGOT: PLT过程偏移表(R_ARM_JMP_SLOT), GOT全局偏移表(R_ARM_GOT), d_ptr中存放虚拟地址
-
 	union {
 		Elf32_Addr	d_ptr;	//虚拟地址
 		Elf32_Word	d_val;	//整数值, 根据不同的tag有不同的解释
@@ -597,3 +599,4 @@ typedef struct {
 #define DF_1_INITFIRST	0x00000020	/* Object's init/fini take priority */
 #define DF_1_NOOPEN	0x00000040	/* Do not allow loading on dlopen() */
 
+#pragma pack(pop)

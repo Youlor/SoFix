@@ -1,26 +1,29 @@
 #include "ElfReader.h"
 #include "Util.h"
 
+#define QSTR8BIT(s) (QString::fromLocal8Bit(s))
 #define DL_ERR qDebug
 
-ElfReader::ElfReader(const char* name, bool dump) 
-	: dump_(dump), phdr_num_(0), phdr_mmap_(NULL), phdr_table_(NULL), phdr_size_(0),
-	load_start_(NULL), load_size_(0), load_bias_(0), loaded_phdr_(NULL)
+ElfReader::ElfReader(const char* path)
+	: path_(nullptr), phdr_num_(0), phdr_mmap_(NULL),
+	phdr_table_(NULL), phdr_size_(0), load_start_(NULL),
+	load_size_(0), load_bias_(0), loaded_phdr_(NULL)
 {
-	if (name)
+	if (path)
 	{
-		name_ = strdup(name);
-		file_.setFileName(name);
+		path_ = strdup(path);
+		file_.setFileName(QSTR8BIT(path));
 	}
 }
 
 ElfReader::~ElfReader()
 {
-	if (name_)
+	if (path_)
 	{
-		free(name_);
+		free(path_);
 	}
 	file_.close();
+
 	if (phdr_mmap_ != NULL)
 	{
 		Util::munmap(phdr_mmap_, phdr_size_);
@@ -28,24 +31,15 @@ ElfReader::~ElfReader()
 }
 
 //完成elf的加载
-bool ElfReader::Load() 
+bool ElfReader::Load()
 {
-	if (!dump_)
-	{
-		return OpenElf() &&
-			ReadElfHeader() &&
-			VerifyElfHeader() &&
-			ReadProgramHeader() &&
-			ReserveAddressSpace() &&
-			LoadSegments() &&
-			FindPhdr();
-	}
-	else
-	{
-		//TODO: dump后的文件可能没有Ehdr(通过修改LOAD段和PHDR段), 可以通过so文件来获取头部, 暂时不考虑
-		
-		return true;
-	}
+	return OpenElf() &&
+		ReadElfHeader() &&
+		VerifyElfHeader() &&
+		ReadProgramHeader() &&
+		ReserveAddressSpace() &&
+		LoadSegments() &&
+		FindPhdr();
 }
 
 bool ElfReader::OpenElf()
@@ -59,12 +53,12 @@ bool ElfReader::ReadElfHeader()
 	qint64 rc = file_.read((char *)&header_, sizeof(header_));
 	if (rc < 0)
 	{
-		DL_ERR("can't read file \"%s\"", name_);
+		DL_ERR("can't read file \"%s\"", path_);
 		return false;
 	}
 	if (rc != sizeof(header_))
 	{
-		DL_ERR("\"%s\" is too small to be an ELF executable", name_);
+		DL_ERR("\"%s\" is too small to be an ELF executable", path_);
 		return false;
 	}
 
@@ -78,36 +72,36 @@ bool ElfReader::VerifyElfHeader()
 		header_.e_ident[EI_MAG2] != ELFMAG2 ||
 		header_.e_ident[EI_MAG3] != ELFMAG3)
 	{
-		DL_ERR("\"%s\" has bad ELF magic", name_);
+		DL_ERR("\"%s\" has bad ELF magic", path_);
 		return false;
 	}
 
 	if (header_.e_ident[EI_CLASS] != ELFCLASS32)
 	{
-		DL_ERR("\"%s\" not 32-bit: %d", name_, header_.e_ident[EI_CLASS]);
+		DL_ERR("\"%s\" not 32-bit: %d", path_, header_.e_ident[EI_CLASS]);
 		return false;
 	}
 	if (header_.e_ident[EI_DATA] != ELFDATA2LSB)
 	{
-		DL_ERR("\"%s\" not little-endian: %d", name_, header_.e_ident[EI_DATA]);
+		DL_ERR("\"%s\" not little-endian: %d", path_, header_.e_ident[EI_DATA]);
 		return false;
 	}
 
-	if (header_.e_type != ET_DYN) 
+	if (header_.e_type != ET_DYN)
 	{
-		DL_ERR("\"%s\" has unexpected e_type: %d", name_, header_.e_type);
+		DL_ERR("\"%s\" has unexpected e_type: %d", path_, header_.e_type);
 		return false;
 	}
 
-	if (header_.e_version != EV_CURRENT) 
+	if (header_.e_version != EV_CURRENT)
 	{
-		DL_ERR("\"%s\" has unexpected e_version: %d", name_, header_.e_version);
+		DL_ERR("\"%s\" has unexpected e_version: %d", path_, header_.e_version);
 		return false;
 	}
 
-	if (header_.e_machine != EM_ARM) 
+	if (header_.e_machine != EM_ARM)
 	{
-		DL_ERR("\"%s\" has unexpected e_machine: %d", name_, header_.e_machine);
+		DL_ERR("\"%s\" has unexpected e_machine: %d", path_, header_.e_machine);
 		return false;
 	}
 
@@ -122,7 +116,7 @@ bool ElfReader::ReadProgramHeader()
 	// are smaller than 64KiB.
 	if (phdr_num_ < 1 || phdr_num_ > 65536 / sizeof(Elf32_Phdr))
 	{
-		DL_ERR("\"%s\" has invalid e_phnum: %d", name_, phdr_num_);
+		DL_ERR("\"%s\" has invalid e_phnum: %d", path_, phdr_num_);
 		return false;
 	}
 
@@ -131,64 +125,16 @@ bool ElfReader::ReadProgramHeader()
 	Elf32_Addr page_offset = PAGE_OFFSET(header_.e_phoff);	//ph在页(4K大小)中的偏移
 
 	phdr_size_ = page_max - page_min;//ph所占的页大小
-	
+
 	void* mmap_result = Util::mmap(NULL, phdr_size_, file_, page_min);//将ph映射到内存中
 	if (mmap_result == nullptr) {
-		DL_ERR("\"%s\" phdr mmap failed", name_);
+		DL_ERR("\"%s\" phdr mmap failed", path_);
 		return false;
 	}
 
 	phdr_mmap_ = mmap_result;
 	phdr_table_ = reinterpret_cast<Elf32_Phdr*>(reinterpret_cast<char*>(mmap_result) + page_offset);
 	return true;
-}
-
-size_t phdr_table_get_load_size(const Elf32_Phdr* phdr_table,
-	size_t phdr_count,
-	Elf32_Addr* out_min_vaddr,
-	Elf32_Addr* out_max_vaddr)
-{
-	Elf32_Addr min_vaddr = 0xFFFFFFFFU;
-	Elf32_Addr max_vaddr = 0x00000000U;
-
-	bool found_pt_load = false;
-	for (size_t i = 0; i < phdr_count; ++i)
-	{
-		const Elf32_Phdr* phdr = &phdr_table[i];
-
-		if (phdr->p_type != PT_LOAD) 
-		{
-			continue;
-		}
-		found_pt_load = true;
-
-		if (phdr->p_vaddr < min_vaddr) 
-		{
-			min_vaddr = phdr->p_vaddr;
-		}
-
-		if (phdr->p_vaddr + phdr->p_memsz > max_vaddr) 
-		{
-			max_vaddr = phdr->p_vaddr + phdr->p_memsz;
-		}
-	}
-	if (!found_pt_load) 
-	{
-		min_vaddr = 0x00000000U;
-	}
-
-	min_vaddr = PAGE_START(min_vaddr);
-	max_vaddr = PAGE_END(max_vaddr);
-
-	if (out_min_vaddr != NULL) 
-	{
-		*out_min_vaddr = min_vaddr;
-	}
-	if (out_max_vaddr != NULL) 
-	{
-		*out_max_vaddr = max_vaddr;
-	}
-	return max_vaddr - min_vaddr;
 }
 
 size_t ElfReader::phdr_table_get_load_size(const Elf32_Phdr* phdr_table,
@@ -239,21 +185,21 @@ size_t ElfReader::phdr_table_get_load_size(const Elf32_Phdr* phdr_table,
 	return max_vaddr - min_vaddr;
 }
 
-bool ElfReader::ReserveAddressSpace() 
+bool ElfReader::ReserveAddressSpace()
 {
 	Elf32_Addr min_vaddr;
 	load_size_ = phdr_table_get_load_size(phdr_table_, phdr_num_, &min_vaddr); //获取可以存放所有的可加载的节的页大小
-	if (load_size_ == 0) 
+	if (load_size_ == 0)
 	{
-		DL_ERR("\"%s\" has no loadable segments", name_);
+		DL_ERR("\"%s\" has no loadable segments", path_);
 		return false;
 	}
 
 	uint8_t* addr = reinterpret_cast<uint8_t*>(min_vaddr);
 	void* start = Util::mmap(nullptr, load_size_);
-	if (start == nullptr) 
+	if (start == nullptr)
 	{
-		DL_ERR("couldn't reserve %d bytes of address space for \"%s\"", load_size_, name_);
+		DL_ERR("couldn't reserve %d bytes of address space for \"%s\"", load_size_, path_);
 		return false;
 	}
 
@@ -262,13 +208,13 @@ bool ElfReader::ReserveAddressSpace()
 	return true;
 }
 
-bool ElfReader::LoadSegments() 
+bool ElfReader::LoadSegments()
 {
-	for (size_t i = 0; i < phdr_num_; ++i) 
+	for (size_t i = 0; i < phdr_num_; ++i)
 	{
 		const Elf32_Phdr* phdr = &phdr_table_[i];
 
-		if (phdr->p_type != PT_LOAD) 
+		if (phdr->p_type != PT_LOAD)
 		{
 			continue;
 		}
@@ -282,7 +228,7 @@ bool ElfReader::LoadSegments()
 
 		Elf32_Addr seg_file_end = seg_start + phdr->p_filesz; //文件映射终止页
 
-															  // File offsets.
+		// File offsets.
 		Elf32_Addr file_start = phdr->p_offset;
 		Elf32_Addr file_end = file_start + phdr->p_filesz;
 
@@ -295,9 +241,9 @@ bool ElfReader::LoadSegments()
 				file_length,
 				file_,
 				file_page_start);
-			if (seg_addr == nullptr) 
+			if (seg_addr == nullptr)
 			{
-				DL_ERR("couldn't map \"%s\" segment %d", name_, i);
+				DL_ERR("couldn't map \"%s\" segment %d", path_, i);
 				return false;
 			}
 		}
@@ -321,7 +267,7 @@ bool ElfReader::LoadSegments()
 			void* zeromap = Util::mmap((void*)seg_file_end, seg_page_end - seg_file_end);
 			if (zeromap == nullptr)
 			{
-				DL_ERR("couldn't zero fill \"%s\"", name_);
+				DL_ERR("couldn't zero fill \"%s\"", path_);
 				return false;
 			}
 		}
@@ -329,14 +275,14 @@ bool ElfReader::LoadSegments()
 	return true;
 }
 
-bool ElfReader::FindPhdr() 
+bool ElfReader::FindPhdr()
 {
 	const Elf32_Phdr* phdr_limit = phdr_table_ + phdr_num_;
 
 	// If there is a PT_PHDR, use it directly. 如果Ph表中存在 PT_PHDR 即自身, 则检查它
-	for (const Elf32_Phdr* phdr = phdr_table_; phdr < phdr_limit; ++phdr) 
+	for (const Elf32_Phdr* phdr = phdr_table_; phdr < phdr_limit; ++phdr)
 	{
-		if (phdr->p_type == PT_PHDR) 
+		if (phdr->p_type == PT_PHDR)
 		{
 			return CheckPhdr(load_bias_ + phdr->p_vaddr);
 		}
@@ -346,11 +292,11 @@ bool ElfReader::FindPhdr()
 	// is 0, it starts with the ELF header, and we can trivially find the
 	// loaded program header from it. 
 	//否则, 检查第一个可加载段且文件偏移为0, 起始于Elf Header, 则检查它
-	for (const Elf32_Phdr* phdr = phdr_table_; phdr < phdr_limit; ++phdr) 
+	for (const Elf32_Phdr* phdr = phdr_table_; phdr < phdr_limit; ++phdr)
 	{
-		if (phdr->p_type == PT_LOAD) 
+		if (phdr->p_type == PT_LOAD)
 		{
-			if (phdr->p_offset == 0) 
+			if (phdr->p_offset == 0)
 			{
 				Elf32_Addr  elf_addr = load_bias_ + phdr->p_vaddr;
 				const Elf32_Ehdr* ehdr = (const Elf32_Ehdr*)(void*)elf_addr;
@@ -361,11 +307,11 @@ bool ElfReader::FindPhdr()
 		}
 	}
 
-	DL_ERR("can't find loaded phdr for \"%s\"", name_);
+	DL_ERR("can't find loaded phdr for \"%s\"", path_);
 	return false;
 }
 
-bool ElfReader::CheckPhdr(Elf32_Addr loaded) 
+bool ElfReader::CheckPhdr(Elf32_Addr loaded)
 {
 	const Elf32_Phdr* phdr_limit = phdr_table_ + phdr_num_;
 	Elf32_Addr loaded_end = loaded + (phdr_num_ * sizeof(Elf32_Phdr));
@@ -379,13 +325,12 @@ bool ElfReader::CheckPhdr(Elf32_Addr loaded)
 		//表示了有效的文件映射
 		Elf32_Addr seg_start = phdr->p_vaddr + load_bias_;	//内存基址
 		Elf32_Addr seg_end = phdr->p_filesz + seg_start;	//内存基址 + 文件大小
-		if (seg_start <= loaded && loaded_end <= seg_end) 
+		if (seg_start <= loaded && loaded_end <= seg_end)
 		{
 			loaded_phdr_ = reinterpret_cast<const Elf32_Phdr*>(loaded);
 			return true;
 		}
 	}
-	DL_ERR("\"%s\" loaded phdr %x not in loadable segment", name_, loaded);
+	DL_ERR("\"%s\" loaded phdr %x not in loadable segment", path_, loaded);
 	return false;
 }
-
