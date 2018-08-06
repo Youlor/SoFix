@@ -2,12 +2,13 @@
 #include "Util.h"
 
 #define QSTR8BIT(s) (QString::fromLocal8Bit(s))
+
 #define DL_ERR qDebug
 
-ElfReader::ElfReader(const char* path)
+ElfReader::ElfReader(const char* path, bool dump)
 	: path_(nullptr), phdr_num_(0), phdr_mmap_(NULL),
 	phdr_table_(NULL), phdr_size_(0), load_start_(NULL),
-	load_size_(0), load_bias_(0), loaded_phdr_(NULL)
+	load_size_(0), load_bias_(0), loaded_phdr_(NULL), dump_(dump)
 {
 	if (path)
 	{
@@ -33,13 +34,18 @@ ElfReader::~ElfReader()
 //完成elf的加载
 bool ElfReader::Load()
 {
-	return OpenElf() &&
-		ReadElfHeader() &&
-		VerifyElfHeader() &&
-		ReadProgramHeader() &&
-		ReserveAddressSpace() &&
-		LoadSegments() &&
-		FindPhdr();
+	if (!dump_)
+	{
+		return OpenElf() &&
+			ReadElfHeader() &&
+			VerifyElfHeader() &&
+			ReadProgramHeader() &&
+			ReserveAddressSpace() &&
+			LoadSegments() &&
+			FindPhdr();
+	}
+
+	return false;
 }
 
 bool ElfReader::OpenElf()

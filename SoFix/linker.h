@@ -108,5 +108,3 @@ int phdr_table_get_arm_exidx(const Elf32_Phdr* phdr_table,
 	Elf32_Addr        load_bias,
 	Elf32_Addr**      arm_exidx,
 	unsigned*         arm_exidx_count);
-
-int soinfo_relocate(soinfo* si, Elf32_Rel* rel, unsigned count, soinfo* needed[]);

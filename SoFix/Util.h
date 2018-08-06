@@ -27,5 +27,11 @@ public:
 
 	//释放由mmap分配的内存
 	static int munmap(void *addr, uint32_t size);
+
+	//Kmp搜索算法, 调用KmpSearch即可, 返回-1表示失败
+	static int kmpSearch(const char *s, int sSize, const char *p, int pSize);
+
+private:
+	static void kmpGetNext(const char *p, int pSize, int next[]);
 };
 

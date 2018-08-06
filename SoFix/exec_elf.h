@@ -56,9 +56,9 @@ typedef struct {
 	Elf32_Off	e_shoff;		/* Section hdr offset shdr_table的文件偏移(执行可选) */
 	Elf32_Word	e_flags;		/* Processor flags 与处理器相关的标志 */
 	Elf32_Half	e_ehsize;		/* sizeof ehdr ehdr的大小 */
-	Elf32_Half	e_phentsize;		/* Program header entry size phdr的大小(静态链接可选) */
+	Elf32_Half	e_phentsize;	/* Program header entry size phdr的大小(静态链接可选) */
 	Elf32_Half	e_phnum;		/* Number of program headers phdr的数量(静态链接可选) */
-	Elf32_Half	e_shentsize;		/* Section header entry size shdr的大小(执行可选) */
+	Elf32_Half	e_shentsize;	/* Section header entry size shdr的大小(执行可选) */
 	Elf32_Half	e_shnum;		/* Number of section headers shdr的数量(执行可选) */
 	Elf32_Half	e_shstrndx;		/* String table index 字符串表strtab的所在节的索引(执行可选) */
 } Elf32_Ehdr; //ELF文件头
@@ -520,7 +520,7 @@ typedef struct {
 * DT_NEEDED: 依赖库, d_val存放依赖库名称字符串在DT_STRTAB中的偏移(可选)
 * DT_HASH: 符号哈希表, d_ptr存放虚拟地址(必需)
 * DT_STRTAB: 字符串表, d_ptr存放虚拟地址(必需)
-* DT_STRSZ: 字符串表的大小, d_val存放字节数(必需)
+* DT_STRSZ: 字符串表的大小, d_val存放字节数(非必需)
 * DT_SYMTAB: 符号表, d_ptr存放虚拟地址(必需), 类型为Elf32_Sym
 * DT_INIT: 初始化函数, d_ptr存放虚拟地址
 * DT_SYMBOLIC: 影响函数soinfo_do_lookup查找符号的顺序
@@ -598,5 +598,10 @@ typedef struct {
 #define DF_1_NODELETE	0x00000008	/* Set the RTLD_NODELETE for object */
 #define DF_1_INITFIRST	0x00000020	/* Object's init/fini take priority */
 #define DF_1_NOOPEN	0x00000040	/* Do not allow loading on dlopen() */
+
+#define ELF32_ST_BIND(info)		ELF_ST_BIND(info)
+#define ELF32_ST_TYPE(info)		ELF_ST_TYPE(info)
+#define ELF32_ST_INFO(bind,type)	ELF_ST_INFO(bind,type)
+#define ELF32_ST_VISIBILITY(other)	ELF_ST_VISIBILITY(other)
 
 #pragma pack(pop)

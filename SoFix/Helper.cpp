@@ -21,7 +21,7 @@ void Helper::elfFixNormalSo()
 	qout << QSTR8BIT("请输入正常so文件路径:") << endl;
 	qin >> sopath;
 
-	elfFixSo(sopath.toLocal8Bit().toStdString().c_str(), sopath.toLocal8Bit().toStdString().c_str());
+	elfFixSo(sopath.toLocal8Bit(), nullptr);
 }
 
 void Helper::elfFixDumpSo()
@@ -29,22 +29,24 @@ void Helper::elfFixDumpSo()
 	
 }
 
-bool Helper::elfFixSo(const char *sopath, const char *fixpath)
+bool Helper::elfFixSo(const char *sopath, const char *dumppath)
 {
-	ElfReader elf_reader(sopath);
+	const char *name = dumppath ? dumppath : sopath;
+	bool dump = dumppath ? true : false;
+	ElfReader elf_reader(name, dump);
 	QTextStream qout(stdout);
 
 	if (elf_reader.Load())
 	{
-		QString loadedpath = QSTR8BIT(sopath) + ".loaded";
+		QString loadedpath = QSTR8BIT(name) + ".loaded";
 		QFile loadedFile(loadedpath);
 		if (loadedFile.open(QIODevice::ReadWrite))
 		{
 			loadedFile.write((char *)elf_reader.load_start(), elf_reader.load_size());
 			qout << QSTR8BIT("加载成功!加载后文件路径: ") + loadedpath << endl;
 
-			const char* bname = strrchr(sopath, '\\');//返回最后一次出现"/"之后的字符串, 即获取不含路径的文件名
-			soinfo* si = soinfo_alloc(bname ? bname + 1 : sopath);//分配soinfo内存, 将内存初始化为0, name拷贝
+			const char* bname = strrchr(name, '\\');//返回最后一次出现"/"之后的字符串, 即获取不含路径的文件名
+			soinfo* si = soinfo_alloc(bname ? bname + 1 : name);//分配soinfo内存, 将内存初始化为0, name拷贝
 			if (si == NULL) 
 			{
 				return NULL;
@@ -60,8 +62,24 @@ bool Helper::elfFixSo(const char *sopath, const char *fixpath)
 			si->phnum = elf_reader.phdr_count();
 			si->phdr = elf_reader.loaded_phdr();
 
-			ElfFixer elf_fixer(si, elf_reader.ehdr(), fixpath);
-			elf_fixer.fix();
+			QFile sofile(QSTR8BIT(sopath));
+			Elf32_Ehdr ehdr;
+			if (sofile.open(QIODevice::ReadOnly | QIODevice::ExistingOnly))
+			{
+				qint64 rc = sofile.read((char *)&ehdr, sizeof(Elf32_Ehdr));
+				if (rc != sizeof(Elf32_Ehdr))
+				{
+					return false;
+				}
+			}
+
+			QString fixedpath = QSTR8BIT(name) + ".fixed";
+			
+			ElfFixer elf_fixer(si, ehdr, fixedpath.toLocal8Bit());
+			if (elf_fixer.fix() && elf_fixer.write())
+			{
+				qout << QSTR8BIT("修复成功!修复后文件路径: ") + fixedpath << endl;
+			}
 		}
 	}
 

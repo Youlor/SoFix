@@ -5,6 +5,8 @@
 class ElfFixer
 {
 private:
+
+	//节头, 下面的这三个变量对应好
 	enum ShIdx
 	{
 		SI_NULL = 0,
@@ -22,14 +24,17 @@ private:
 		SI_GOT,
 		SI_DATA,
 		SI_BSS,
-		SI_SHSTRTAB
+		SI_SHSTRTAB,
+		SI_MAX
 	};
 
+	Elf32_Shdr shdrs_[SI_MAX];
 	static const char strtab[];
+
 	static Elf32_Word GetShdrName(int idx);
 
-	char *name_;	//待修复文件
-	soinfo *si_;
+	char *name_;	//修复后文件名称
+	soinfo *si_;	//待修复dump so或由ElfReader加载正常so文件得到的
 	QFile file_;
 
 	Elf32_Ehdr ehdr_;	//通过正常的so文件获取
@@ -38,36 +43,11 @@ private:
 	const Elf32_Phdr *phdr_;
 	size_t phnum_;
 
-	//通过soinfo中的phdr_直接获取 PT_DYNAMIC, PT_ARM_EXIDX
-	Elf32_Shdr dynamic_;
-	Elf32_Shdr arm_exidex;
-
-	//遍历dynamic_获取
-	Elf32_Shdr hash_;
-	Elf32_Shdr dynsym_;
-	Elf32_Shdr dynstr_;
-	Elf32_Shdr rel_dyn_;
-	Elf32_Shdr rel_plt_;
-	Elf32_Shdr init_array_;
-	Elf32_Shdr fini_array_;
-
-	//通过节的关系或特征获取
-	Elf32_Shdr plt_;
-	Elf32_Shdr got_;
-	Elf32_Shdr data_;
-	Elf32_Shdr bss_;
-	Elf32_Shdr text_;
-
-	//SHT_UNDEF
-	Elf32_Shdr shnull_;
-
-	//.shstrtab
-	Elf32_Shdr shstrtab_;
-
 public:
 	ElfFixer(soinfo *si, Elf32_Ehdr ehdr, const char *name);
 	~ElfFixer();
 	bool fix();
+	bool write();
 
 private:
 	//修复Ehdr
@@ -84,13 +64,22 @@ private:
 	//从Phdr中修复部分Shdr: .dynamic, .arm.exidx
 	bool fixShdrFromPhdr();
 
-	//从.dynamic中修复部分Shdr
+	//从.dynamic中修复部分Shdr:  .hash, .dynsym, .dynstr, .rel.dyn, .rel.plt, .init_array, fini_array
 	bool fixShdrFromDynamic();
 
-	//根据Shdr的关系修复
+	//根据.dynamic和.dynsym引用的字符串来确定.dynstr节的大小
+	void fixDynstr();
+
+	//根据.hash,.rel.plt,.rel.dyn引用的符号信息来确定.dynsym, .dynstr节的大小
+	bool fixDynsym();
+
+	//根据Shdr的关系修复 .plt, .text, .got, .data, .bss
 	bool fixShdrFromShdr();
 
-	//将内存地址转为文件偏移, -1表示失败
+	//将文件中记录的内存地址转为文件偏移, -1表示失败
 	Elf32_Off addrToOff(Elf32_Addr addr);
+
+	//返回文件中记录的内存地址所在的节, -1表示没找到
+	int findShIdx(Elf32_Off off);
 };
 

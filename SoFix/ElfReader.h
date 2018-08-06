@@ -6,7 +6,7 @@
 class ElfReader 
 {
 public:
-	ElfReader(const char* path);
+	ElfReader(const char* path, bool dump);
 	~ElfReader();
 
 	bool Load();
@@ -16,7 +16,6 @@ public:
 	Elf32_Addr load_size() { return load_size_; }
 	Elf32_Addr load_bias() { return load_bias_; }
 	const Elf32_Phdr* loaded_phdr() { return loaded_phdr_; }
-	Elf32_Ehdr ehdr() { return header_; }
 
 private:
 	bool OpenElf();
@@ -30,7 +29,8 @@ private:
 	bool FindPhdr();
 	bool CheckPhdr(Elf32_Addr);
 
-	char* path_;	//正常so文件, 用于修复或辅助dump文件的修复
+	char* path_;	//待修复文件路径
+	bool dump_;
 	QFile file_;
 
 	Elf32_Ehdr header_;			//elf文件头部
