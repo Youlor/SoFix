@@ -61,8 +61,6 @@ private:
 	//修复整个Shdr, 名称, 文件偏移
 	bool fixShdr();
 
-	bool showAll();
-
 	//从Phdr中修复部分Shdr: .dynamic, .arm.exidx
 	bool fixShdrFromPhdr();
 
@@ -70,7 +68,7 @@ private:
 	bool fixShdrFromDynamic();
 
 	//根据.dynamic和.dynsym引用的字符串来确定.dynstr节的大小
-	void fixDynstr();
+	bool fixDynstr();
 
 	//根据.hash,.rel.plt,.rel.dyn引用的符号信息来确定.dynsym, .dynstr节的大小
 	bool fixDynsym();
@@ -81,7 +79,9 @@ private:
 	//将文件中记录的内存地址转为文件偏移, -1表示失败
 	Elf32_Off addrToOff(Elf32_Addr addr);
 
+	Elf32_Addr offToAddr(Elf32_Off off);
+
 	//返回文件中记录的内存地址所在的节, -1表示没找到
-	int findShIdx(Elf32_Off off);
+	int findShIdx(Elf32_Addr addr);
 };
 

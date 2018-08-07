@@ -52,8 +52,7 @@ bool ElfFixer::fix()
 {
 	return fixPhdr() &&
 		fixEhdr() &&
-		fixShdr() &&
-		showAll();
+		fixShdr();
 }
 
 bool ElfFixer::write()
@@ -109,6 +108,8 @@ bool ElfFixer::write()
 
 bool ElfFixer::fixEhdr()
 {
+	qDebug("[fixEhdr] fix ehdr...");
+
 	//将shdr放在可加载段数据的尾部
 	const Elf32_Phdr* phdr = si_->phdr;
 	const Elf32_Phdr* phdr_limit = phdr + si_->phnum;
@@ -140,18 +141,23 @@ bool ElfFixer::fixEhdr()
 	shdrs_[SI_SHSTRTAB].sh_addralign = 1;
 	shdrs_[SI_SHSTRTAB].sh_entsize = 0;
 
+	qDebug("[fixEhdr] fix Done!");
 	return true;
 }
 
 bool ElfFixer::fixPhdr()
 {
+	qDebug("[fixPhdr] fix phdr...");
+
 	if (si_)
 	{
 		phdr_ = si_->phdr;
 		phnum_ = si_->phnum;
+		qDebug("[fixPhdr] fix phdr Done!");
 		return true;
 	}
 
+	qDebug("[fixPhdr] fix phdr Fail!");
 	return false;
 }
 
@@ -159,24 +165,15 @@ bool ElfFixer::fixShdr()
 {
 	return fixShdrFromPhdr() &&
 		fixShdrFromDynamic() &&
-		fixShdrFromShdr();
-}
-
-bool ElfFixer::showAll()
-{
-	DEBUG("Name\tAddr\tOff\tSize\tEs\n");
-	for (int i = 0; i < SI_MAX; i++)
-	{
-		DEBUG("%s\t%08X\t%08X\t%08X\t%08X\n",
-			strtab + shdrs_[i].sh_name, shdrs_[i].sh_addr,
-			shdrs_[i].sh_offset, shdrs_[i].sh_size, shdrs_[i].sh_entsize);
-	}
-
-	return true;
+		fixShdrFromShdr() && 
+		fixDynsym() &&
+		fixDynstr();
 }
 
 bool ElfFixer::fixShdrFromPhdr()
 {
+	qDebug("[fixShdrFromPhdr] fix Shdr: .dynamic, .arm.exidx ...");
+
 	//修复.dynamic: 直接读取段, 大小遍历到DT_NULL
 	phdr_table_get_dynamic_section(phdr_, phnum_, si_->load_bias, &si_->dynamic, NULL, NULL);
 	shdrs_[SI_DYNAMIC].sh_name = GetShdrName(SI_DYNAMIC);
@@ -206,6 +203,7 @@ bool ElfFixer::fixShdrFromPhdr()
 		shdrs_[SI_ARMEXIDX].sh_entsize = 8;
 	}
 
+	qDebug("[fixShdrFromPhdr] fix Shdr: .dynamic, .arm.exidx Done!");
 	return true;
 }
 
@@ -220,6 +218,8 @@ bool ElfFixer::fixShdrFromDynamic()
 	//.init_array: 直接读取DT_INIT_ARRAY, DT_INIT_ARRAYSZ即可获取起始位置和大小
 	//.fini_array: 直接读取DT_FINI_ARRAY, DT_FINI_ARRAYSZ即可获取起始位置和大小
 
+	qDebug("[fixShdrFromDynamic] fix Shdr: .hash, .dynstr, .dynsym, .rel.dyn,"
+		".rel.plt, .init_array, .fini_array ...");
 
 	/* "base" might wrap around UINT32_MAX. */
 	Elf32_Addr base = si_->load_bias;
@@ -250,6 +250,8 @@ bool ElfFixer::fixShdrFromDynamic()
 			shdrs_[SI_HASH].sh_info = 0;
 			shdrs_[SI_HASH].sh_addralign = 4;
 			shdrs_[SI_HASH].sh_entsize = sizeof(Elf32_Word);
+
+			qDebug("[fixShdrFromDynamic] found DT_HASH!");
 			break;
 		case DT_STRTAB:
 			si_->strtab = (const char *)(base + d->d_un.d_ptr);
@@ -264,6 +266,8 @@ bool ElfFixer::fixShdrFromDynamic()
 			shdrs_[SI_DYNSTR].sh_info = 0;
 			shdrs_[SI_DYNSTR].sh_addralign = 1;
 			shdrs_[SI_DYNSTR].sh_entsize = 0;
+
+			qDebug("[fixShdrFromDynamic] found DT_STRTAB!");
 			break;
 		case DT_STRSZ:
 			//shdrs_[SI_DYNSTR].sh_size = d->d_un.d_val;	//由DT_STRSZ获取大小可能不准确, 后续可以通过引用该节(.symtab, .dynamic)的范围来确定大小
@@ -281,6 +285,8 @@ bool ElfFixer::fixShdrFromDynamic()
 			shdrs_[SI_DYNSYM].sh_info = 1;	//最后一个局部符号的符号表索引值加一, 暂时给1
 			shdrs_[SI_DYNSYM].sh_addralign = 4;
 			shdrs_[SI_DYNSYM].sh_entsize = sizeof(Elf32_Sym);
+
+			qDebug("[fixShdrFromDynamic] found DT_SYMTAB!");
 			break;
 		case DT_JMPREL:
 			si_->plt_rel = (Elf32_Rel*)(base + d->d_un.d_ptr);
@@ -295,6 +301,8 @@ bool ElfFixer::fixShdrFromDynamic()
 			shdrs_[SI_RELPLT].sh_info = ShIdx::SI_GOT;		//.got的节索引
 			shdrs_[SI_RELPLT].sh_addralign = 4;
 			shdrs_[SI_RELPLT].sh_entsize = sizeof(Elf32_Rel);
+
+			qDebug("[fixShdrFromDynamic] found DT_JMPREL!");
 			break;
 		case DT_PLTRELSZ:
 			si_->plt_rel_count = d->d_un.d_val / sizeof(Elf32_Rel);
@@ -314,11 +322,15 @@ bool ElfFixer::fixShdrFromDynamic()
 			shdrs_[SI_RELDYN].sh_info = 0;
 			shdrs_[SI_RELDYN].sh_addralign = 4;
 			shdrs_[SI_RELDYN].sh_entsize = sizeof(Elf32_Rel);
+
+			qDebug("[fixShdrFromDynamic] found DT_REL!");
 			break;
 		case DT_RELSZ:
 			si_->rel_count = d->d_un.d_val / sizeof(Elf32_Rel);
 
 			shdrs_[SI_RELDYN].sh_size = d->d_un.d_val;	//获取.rel.dyn准确大小
+
+			qDebug("[fixShdrFromDynamic] found DT_RELSZ!");
 			break;
 		case DT_PLTGOT:
 			/* Save this in case we decide to do lazy binding. We don't yet. */
@@ -326,7 +338,6 @@ bool ElfFixer::fixShdrFromDynamic()
 			break;
 		case DT_INIT_ARRAY:
 			si_->init_array = reinterpret_cast<linker_function_t*>(base + d->d_un.d_ptr);
-			DEBUG("%s constructors (DT_INIT_ARRAY) found at %p", si_->name, si_->init_array);
 
 			shdrs_[SI_INIT_ARRAY].sh_name = GetShdrName(SI_INIT_ARRAY);
 			shdrs_[SI_INIT_ARRAY].sh_type = SHT_INIT_ARRAY;
@@ -338,15 +349,18 @@ bool ElfFixer::fixShdrFromDynamic()
 			shdrs_[SI_INIT_ARRAY].sh_info = 0;
 			shdrs_[SI_INIT_ARRAY].sh_addralign = 4;
 			shdrs_[SI_INIT_ARRAY].sh_entsize = 4;
+
+			qDebug("[fixShdrFromDynamic] found DT_INIT_ARRAY!");
 			break;
 		case DT_INIT_ARRAYSZ:
 			si_->init_array_count = ((unsigned)d->d_un.d_val) / sizeof(Elf32_Addr);
 
 			shdrs_[SI_INIT_ARRAY].sh_size = d->d_un.d_val;	//获取.init_array的准确大小
+
+			qDebug("[fixShdrFromDynamic] found DT_INIT_ARRAYSZ!");
 			break;
 		case DT_FINI_ARRAY:
 			si_->fini_array = reinterpret_cast<linker_function_t*>(base + d->d_un.d_ptr);
-			DEBUG("%s destructors (DT_FINI_ARRAY) found at %p", si_->name, si_->fini_array);
 
 			shdrs_[SI_FINI_ARRAY].sh_name = GetShdrName(SI_FINI_ARRAY);
 			shdrs_[SI_FINI_ARRAY].sh_type = SHT_FINI_ARRAY;
@@ -358,28 +372,34 @@ bool ElfFixer::fixShdrFromDynamic()
 			shdrs_[SI_FINI_ARRAY].sh_info = 0;
 			shdrs_[SI_FINI_ARRAY].sh_addralign = 4;
 			shdrs_[SI_FINI_ARRAY].sh_entsize = 4;
+
+			qDebug("[fixShdrFromDynamic] found DT_FINI_ARRAY!");
 			break;
 		case DT_FINI_ARRAYSZ:
 			si_->fini_array_count = ((unsigned)d->d_un.d_val) / sizeof(Elf32_Addr);
 
 			shdrs_[SI_FINI_ARRAY].sh_size = d->d_un.d_val;	//获取.fini_array的准确大小
+
+			qDebug("[fixShdrFromDynamic] found DT_FINI_ARRAYSZ!");
 			break;
 
 		case DT_NEEDED:
 			++needed_count;
+
+			qDebug("[fixShdrFromDynamic] found DT_NEEDED!");
 			break;
 		}
-
 	}
 
-	fixDynsym();
-	fixDynstr();
+	qDebug("[fixShdrFromDynamic] fix Shdr: .hash, .dynstr, .dynsym, .rel.dyn,"
+		".rel.plt, .init_array, .fini_array Done!");
 
 	return true;
 }
 
-void ElfFixer::fixDynstr()
+bool ElfFixer::fixDynstr()
 {
+	qDebug("[fixDynstr] fix .dynstr...");
 	//根据.dynamic引用的字符串来确定.dynstr节的大小
 	for (Elf32_Dyn* d = si_->dynamic; d->d_tag != DT_NULL; ++d)
 	{
@@ -389,11 +409,15 @@ void ElfFixer::fixDynstr()
 			shdrs_[SI_DYNSTR].sh_size = MAX(shdrs_[SI_DYNSTR].sh_size, d->d_un.d_val + strlen(library_name) + 1);
 		}
 	}
+
+	qDebug("[fixDynstr] fix .dynstr Done!");
+	return true;
 }
 
 bool ElfFixer::fixDynsym()
 {
 	//修复.dynsym, .dynstr的大小
+	qDebug("[fixDynsym] fix .dynsym...");
 
 	shdrs_[SI_DYNSYM].sh_size = sizeof(Elf32_Sym);
 	shdrs_[SI_DYNSYM].sh_info = 1;
@@ -421,7 +445,6 @@ bool ElfFixer::fixDynsym()
 				shdrs_[SI_DYNSYM].sh_size = MAX(shdrs_[SI_DYNSYM].sh_size, (sym + 1) * sizeof(Elf32_Sym));
 				shdrs_[SI_DYNSTR].sh_size = MAX(shdrs_[SI_DYNSTR].sh_size, symtab[sym].st_name + strlen(sym_name) + 1);
 			}
-
 		}
 	}
 
@@ -477,21 +500,23 @@ bool ElfFixer::fixDynsym()
 		{
 			int local_idx = si_->symtab - sym;
 			shdrs_[SI_DYNSYM].sh_info = local_idx + 1;
+		}
 
-			//TODO: 判断虚拟地址所在的节, 最后修正st_shndx(原来为0的不处理), 便于010使用-_-
-			if (sym->st_shndx != 0)
-			{
-
-			}
+		//判断虚拟地址所在的节, 修正st_shndx, 便于010使用-_-
+		if (sym->st_shndx != SHN_UNDEF && (sym->st_shndx < SHN_LORESERVE || sym->st_shndx > SHN_HIRESERVE))
+		{
+			sym->st_shndx = findShIdx(sym->st_value);
 		}
 	}
 
+	qDebug("[fixDynsym] fix .dynsym Done!");
 	return true;
 }
 
-//这里的修复不够准确, 因为信息不够全, 只能尝试修复
+//这里的修复可能不够准确, 因为信息不够全, 只能尝试修复
 bool ElfFixer::fixShdrFromShdr()
 {
+	qDebug("[fixShdrFromShdr] fix shdr: .plt, .got, .data.rel.ro, .text, .rodata, .data, .bss ...");
 	//修复.plt
 	//修复起始地址, 两种方法: 
 	//	1. 通过16字节特征码(shellcode)且必须落在已知节之外
@@ -500,6 +525,8 @@ bool ElfFixer::fixShdrFromShdr()
 	//04 E0 9F E5                 LDR             LR, =(_GLOBAL_OFFSET_TABLE_ - 0x5EB0)
 	//0E E0 8F E0                 ADD             LR, PC, LR; _GLOBAL_OFFSET_TABLE_
 	//08 F0 BE E5                 LDR             PC, [LR, #8]!; dword_0
+
+	qDebug("[fixShdrFromShdr] fix .plt...");
 
 	Elf32_Addr _GLOBAL_OFFSET_TABLE_ = 0;	//_GLOBAL_OFFSET_TABLE_的虚拟地址
 
@@ -515,7 +542,7 @@ bool ElfFixer::fixShdrFromShdr()
 	int addr = Util::kmpSearch((char *)si_->base, si_->size, plt_code, 16);
 	if (addr == -1)
 	{
-		DEBUG("kmpSearch .plt节没有找到\n");
+		qDebug("[fixShdrFromShdr] fix .plt Fail!");
 	}
 	else
 	{
@@ -530,11 +557,11 @@ bool ElfFixer::fixShdrFromShdr()
 		shdrs_[SI_PLT].sh_addralign = 4;
 		shdrs_[SI_PLT].sh_entsize = 0;
 
-		_GLOBAL_OFFSET_TABLE_ = shdrs_[SI_PLT].sh_addr + *(Elf32_Addr *)(si_->load_bias + shdrs_[SI_PLT].sh_addr + 16);
-		DEBUG("kmpSearch 已经找到.plt节 @offset: %X\n", shdrs_[SI_PLT].sh_offset);
+		_GLOBAL_OFFSET_TABLE_ = shdrs_[SI_PLT].sh_addr + 16 + *(Elf32_Addr *)(si_->load_bias + shdrs_[SI_PLT].sh_addr + 16);
+		qDebug("[fixShdrFromShdr] fix .plt Done!");
 
+		qDebug("[fixShdrFromShdr] fix .got...");
 		//修复.got, 通过遍历.rel.dyn节中类型为R_ARM_GLOB_DAT的范围来确定, 大小可以由_GLOBAL_OFFSET_TABLE_的虚拟地址确定
-		//BUG:大小不正确, TODO
 		{
 			Elf32_Addr got_start = _GLOBAL_OFFSET_TABLE_;
 			Elf32_Addr got_end = _GLOBAL_OFFSET_TABLE_ + 12 + 4 * (shdrs_[SI_RELPLT].sh_size / sizeof(Elf32_Rel));
@@ -561,12 +588,14 @@ bool ElfFixer::fixShdrFromShdr()
 			shdrs_[SI_GOT].sh_info = 0;
 			shdrs_[SI_GOT].sh_addralign = 4;
 			shdrs_[SI_GOT].sh_entsize = 0;
+
+			qDebug("[fixShdrFromShdr] fix .got Done!");
 		}
 	}
 
 	//修复.data.rel.ro节, 通过遍历.rel.dyn节中类型为R_ARM_ABS32的范围来确定, 起始地址-4即可
-	//BUG: 范围不正确, TODO
 	{
+		qDebug("[fixShdrFromShdr] fix .data.rel.ro...");
 		Elf32_Addr data_rel_ro_start = 0;
 		Elf32_Addr data_rel_ro_end = 0;
 
@@ -576,7 +605,7 @@ bool ElfFixer::fixShdrFromShdr()
 		for (size_t idx = 0; idx < count; ++idx, ++rel)
 		{
 			unsigned type = ELF32_R_TYPE(rel->r_info);
-			if (type == R_ARM_GLOB_DAT)
+			if (type == R_ARM_ABS32)
 			{
 				if (data_rel_ro_start == 0)
 				{
@@ -603,12 +632,16 @@ bool ElfFixer::fixShdrFromShdr()
 			shdrs_[SI_DATA_REL_RO].sh_info = 0;
 			shdrs_[SI_DATA_REL_RO].sh_addralign = 4;
 			shdrs_[SI_DATA_REL_RO].sh_entsize = 0;
+
+			qDebug("[fixShdrFromShdr] fix .data.rel.ro Done!");
 		}
 	}
 
 	//修复.text节, 简单的将.plt之后到.ARM.exidx/.fini_array/.init_array/.data.rel.ro/.dynamic之间的节视为.text, 之后可以通过IDA反汇编人肉修复
 	if(shdrs_[SI_PLT].sh_type)
 	{
+		qDebug("[fixShdrFromShdr] fix .text...");
+
 		Elf32_Shdr *start_shdr = &shdrs_[SI_PLT];
 		Elf32_Shdr *end_shdr = nullptr;
 		if (shdrs_[SI_ARMEXIDX].sh_type)
@@ -633,25 +666,28 @@ bool ElfFixer::fixShdrFromShdr()
 		}
 
 		if (end_shdr && 
-			(ALIGN(start_shdr->sh_addr + start_shdr->sh_size, end_shdr->sh_addralign) != end_shdr->sh_addr))
+			(ALIGN(start_shdr->sh_offset + start_shdr->sh_size, end_shdr->sh_addralign) != end_shdr->sh_offset))
 		{
 			shdrs_[SI_TEXT].sh_name = GetShdrName(SI_TEXT);
 			shdrs_[SI_TEXT].sh_type = SHT_PROGBITS;
 			shdrs_[SI_TEXT].sh_flags = SHF_ALLOC | SHF_EXECINSTR;
-			shdrs_[SI_TEXT].sh_addr = ALIGN(start_shdr->sh_addr + start_shdr->sh_size, 4);
-			shdrs_[SI_TEXT].sh_offset = addrToOff(shdrs_[SI_TEXT].sh_addr);
-			shdrs_[SI_TEXT].sh_size = end_shdr->sh_addr - shdrs_[SI_TEXT].sh_addr;
+			shdrs_[SI_TEXT].sh_offset = ALIGN(start_shdr->sh_offset + start_shdr->sh_size, 4);
+			shdrs_[SI_TEXT].sh_addr = offToAddr(shdrs_[SI_TEXT].sh_offset);
+			shdrs_[SI_TEXT].sh_size = end_shdr->sh_offset - shdrs_[SI_TEXT].sh_offset;
 			shdrs_[SI_TEXT].sh_link = 0;
 			shdrs_[SI_TEXT].sh_info = 0;
 			shdrs_[SI_TEXT].sh_addralign = 4;
 			shdrs_[SI_TEXT].sh_entsize = 0;
+
+			qDebug("[fixShdrFromShdr] fix .text Done!");
 		}
 	}
 
 	//修复.rodata节, 简单的将.text/.ARM.exidx之后和fini_array/.init_array/.data.rel.ro/.dynamic之间节视为.rodata
-	//BUG: 节的大小不能超过所在段的最大文件映射
 	if (shdrs_[SI_TEXT].sh_type)
 	{
+		qDebug("[fixShdrFromShdr] fix .rodata...");
+
 		Elf32_Shdr *start_shdr = &shdrs_[SI_TEXT];
 		Elf32_Shdr *end_shdr = nullptr;
 
@@ -678,26 +714,30 @@ bool ElfFixer::fixShdrFromShdr()
 		}
 		
 		if (end_shdr &&
-			(ALIGN(start_shdr->sh_addr + start_shdr->sh_size, end_shdr->sh_addralign) != end_shdr->sh_addr))
+			(ALIGN(start_shdr->sh_offset + start_shdr->sh_size, end_shdr->sh_addralign) != end_shdr->sh_offset))
 		{
 			shdrs_[SI_RODATA].sh_name = GetShdrName(SI_RODATA);
 			shdrs_[SI_RODATA].sh_type = SHT_PROGBITS;
 			shdrs_[SI_RODATA].sh_flags = SHF_ALLOC;
-			shdrs_[SI_RODATA].sh_addr = ALIGN(start_shdr->sh_addr + start_shdr->sh_size, 16);
-			shdrs_[SI_RODATA].sh_offset = addrToOff(shdrs_[SI_RODATA].sh_addr);
-			shdrs_[SI_RODATA].sh_size = end_shdr->sh_addr - shdrs_[SI_RODATA].sh_addr;
+			shdrs_[SI_RODATA].sh_offset = ALIGN(start_shdr->sh_offset + start_shdr->sh_size, 16);
+			shdrs_[SI_RODATA].sh_addr = offToAddr(shdrs_[SI_RODATA].sh_offset);
+			shdrs_[SI_RODATA].sh_size = end_shdr->sh_offset - shdrs_[SI_RODATA].sh_offset;
 			shdrs_[SI_RODATA].sh_link = 0;
 			shdrs_[SI_RODATA].sh_info = 0;
 			shdrs_[SI_RODATA].sh_addralign = 16;
 			shdrs_[SI_RODATA].sh_entsize = 0;
+
+			qDebug("[fixShdrFromShdr] fix .rodata Done!");
 		}
 	}
 
 	//修复.data节, 简单的将.got之后到可加载段的实际文件映射范围视为.data节
 	if (shdrs_[SI_GOT].sh_type)
 	{
+		qDebug("[fixShdrFromShdr] fix .data...");
+
 		Elf32_Shdr *start_shdr = &shdrs_[SI_GOT];
-		Elf32_Addr end_addr = 0;
+		Elf32_Addr end_off = 0;
 
 		const Elf32_Phdr* phdr = si_->phdr;
 		const Elf32_Phdr* phdr_limit = phdr + si_->phnum;
@@ -709,24 +749,28 @@ bool ElfFixer::fixShdrFromShdr()
 				continue;
 			}
 
-			end_addr = MAX(end_addr, phdr->p_paddr + phdr->p_filesz);
+			end_off = MAX(end_off, phdr->p_offset + phdr->p_filesz);
 		}
 
 		shdrs_[SI_DATA].sh_name = GetShdrName(SI_DATA);
 		shdrs_[SI_DATA].sh_type = SHT_PROGBITS;
 		shdrs_[SI_DATA].sh_flags = SHF_ALLOC | SHF_WRITE;
-		shdrs_[SI_DATA].sh_addr = ALIGN(start_shdr->sh_addr + start_shdr->sh_size, 4);
-		shdrs_[SI_DATA].sh_offset = addrToOff(shdrs_[SI_DATA].sh_addr);
-		shdrs_[SI_DATA].sh_size = end_addr - shdrs_[SI_DATA].sh_addr;
+		shdrs_[SI_DATA].sh_offset = ALIGN(start_shdr->sh_offset + start_shdr->sh_size, 4);
+		shdrs_[SI_DATA].sh_addr = offToAddr(shdrs_[SI_DATA].sh_offset);
+		shdrs_[SI_DATA].sh_size = end_off - shdrs_[SI_DATA].sh_offset;
 		shdrs_[SI_DATA].sh_link = 0;
 		shdrs_[SI_DATA].sh_info = 0;
 		shdrs_[SI_DATA].sh_addralign = 4;
 		shdrs_[SI_DATA].sh_entsize = 0;
+
+		qDebug("[fixShdrFromShdr] fix .data Done!");
 	}
 
 	//修复.bss节, 简单的将.data节之后到可加载段的实际内存地址视为.bss节
 	if (shdrs_[SI_DATA].sh_type)
 	{
+		qDebug("[fixShdrFromShdr] fix .bss...");
+
 		Elf32_Shdr *start_shdr = &shdrs_[SI_DATA];
 		Elf32_Addr end_addr = 0;
 
@@ -747,14 +791,17 @@ bool ElfFixer::fixShdrFromShdr()
 		shdrs_[SI_BSS].sh_type = SHT_NOBITS;
 		shdrs_[SI_BSS].sh_flags = SHF_ALLOC | SHF_WRITE;
 		shdrs_[SI_BSS].sh_addr = ALIGN(start_shdr->sh_addr + start_shdr->sh_size, 16);
-		shdrs_[SI_BSS].sh_offset = addrToOff(shdrs_[SI_DATA].sh_addr);
-		shdrs_[SI_BSS].sh_size = end_addr - shdrs_[SI_DATA].sh_addr;
+		shdrs_[SI_BSS].sh_offset = ALIGN(start_shdr->sh_offset + start_shdr->sh_size, 16);
+		shdrs_[SI_BSS].sh_size = end_addr - shdrs_[SI_BSS].sh_addr;
 		shdrs_[SI_BSS].sh_link = 0;
 		shdrs_[SI_BSS].sh_info = 0;
 		shdrs_[SI_BSS].sh_addralign = 16;
 		shdrs_[SI_BSS].sh_entsize = 0;
+
+		qDebug("[fixShdrFromShdr] fix .bss Done!");
 	}
 
+	qDebug("[fixShdrFromShdr] fix Done!");
 	return true;
 }
 
@@ -790,6 +837,7 @@ Elf32_Off ElfFixer::addrToOff(Elf32_Addr addr)
 		if ((phdr->p_flags & PF_W) == 0)
 		{
 			seg_file_end = PAGE_END(seg_file_end);
+			file_end = PAGE_END(file_end);
 		}
 
 		//判断addr是否在LOAD段中
@@ -803,12 +851,58 @@ Elf32_Off ElfFixer::addrToOff(Elf32_Addr addr)
 	return off;
 }
 
-int ElfFixer::findShIdx(Elf32_Off off)
+Elf32_Addr ElfFixer::offToAddr(Elf32_Off off)
+{
+	const Elf32_Phdr* phdr = si_->phdr;
+	const Elf32_Phdr* phdr_limit = phdr + si_->phnum;
+	Elf32_Off addr = -1;
+
+	for (phdr = si_->phdr; phdr < phdr_limit; phdr++)
+	{
+		if (phdr->p_type != PT_LOAD)
+		{
+			continue;
+		}
+
+		Elf32_Addr seg_start = phdr->p_vaddr;	//内存映射实际起始地址
+		Elf32_Addr seg_end = seg_start + phdr->p_memsz;	//内存映射实际终止地址
+
+		Elf32_Addr seg_page_start = PAGE_START(seg_start); //内存映射页首地址
+		Elf32_Addr seg_page_end = PAGE_END(seg_end);	   //内存映射终止页
+
+		Elf32_Addr seg_file_end = seg_start + phdr->p_filesz; //文件映射终止页
+
+															  // File offsets.
+		Elf32_Addr file_start = phdr->p_offset;
+		Elf32_Addr file_end = file_start + phdr->p_filesz;
+
+		Elf32_Addr file_page_start = PAGE_START(file_start); //文件映射页首地址
+		Elf32_Addr file_length = file_end - file_page_start; //文件映射大小
+
+															 //如果没有可写权限, 修正文件的实际映射大小
+		if ((phdr->p_flags & PF_W) == 0)
+		{
+			seg_file_end = PAGE_END(seg_file_end);
+			file_end = PAGE_END(file_end);
+		}
+
+		//判断off是否在LOAD段中
+		if (off >= file_page_start && off < file_end)
+		{
+			addr = seg_page_start + off - file_page_start;
+			break;
+		}
+	}
+
+	return addr;
+}
+
+int ElfFixer::findShIdx(Elf32_Addr addr)
 {
 	int idx = -1;
 	for (int i = 0; i < SI_MAX; i++)
 	{
-		if (off >= shdrs_[i].sh_offset && off < shdrs_[i].sh_offset + shdrs_[i].sh_size)
+		if (addr >= shdrs_[i].sh_addr && addr < shdrs_[i].sh_addr + shdrs_[i].sh_size)
 		{
 			idx = i;
 			break;

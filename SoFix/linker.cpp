@@ -51,7 +51,6 @@ soinfo* soinfo_alloc(const char* name)
 	memset(si, 0, sizeof(soinfo));
 	strlcpy(si->name, name, sizeof(si->name));
 
-	DEBUG("name %s: allocated soinfo @ %p", name, si);
 	return si;
 }
 

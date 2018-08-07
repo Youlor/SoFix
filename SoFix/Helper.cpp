@@ -82,6 +82,9 @@ bool Helper::elfFixSo(const char *sopath, const char *dumppath)
 			}
 		}
 	}
-
+	else
+	{
+		qout << QSTR8BIT("so加载失败, 可能不是有效的so文件") << endl;
+	}
 	return true;
 }
