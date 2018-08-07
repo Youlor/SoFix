@@ -8,6 +8,8 @@
 #define PAGE_END(x)    (PAGE_START((x) + (PAGE_SIZE-1)))
 #define PAGE_OFFSET(x) ((x) & ~PAGE_MASK)
 
+#define ALIGN(addr, size) (((addr) + (size)-1) & (~((size)-1)))
+
 typedef struct 
 {
 	void *aligned;
