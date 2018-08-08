@@ -65,7 +65,8 @@ bool ElfFixer::fix()
 {
 	return fixPhdr() &&
 		fixEhdr() &&
-		fixShdr();
+		fixShdr() &&
+		fixRel();
 }
 
 bool ElfFixer::write()
@@ -107,11 +108,9 @@ bool ElfFixer::write()
 		free(readbytes);
 	}
 
-	//Elf头部应该在段数据写入之后写入, 避免被段数据覆盖
+	//修复后的Elf头部应该在段数据写入之后写入, 避免被段数据覆盖
 	fixedfile_.seek(0);
 	fixedfile_.write((char *)&ehdr_, sizeof(Elf32_Ehdr));
-	fixedfile_.seek(ehdr_.e_phoff);
-	fixedfile_.write((char *)phdr_, ehdr_.e_phnum + sizeof(Elf32_Phdr));
 
 	//从正常so文件中读取段数据之后的文件数据
 	if (phdr_max_off < sofile_.size())
@@ -166,19 +165,6 @@ bool ElfFixer::fixEhdr()
 			return false;
 		}
 	}
-
-	//将shdr放在可加载段数据的尾部 ==> TODO 放在整个原so文件的尾部, 防止覆盖原有数据
-	//const Elf32_Phdr* phdr = si_->phdr;
-	//const Elf32_Phdr* phdr_limit = phdr + si_->phnum;
-	//Elf32_Off max_off = 0;
-
-	//for (phdr = si_->phdr; phdr < phdr_limit; phdr++)
-	//{
-	//	if (PAGE_END(phdr->p_offset + phdr->p_filesz) > max_off)
-	//	{
-	//		max_off = PAGE_END(phdr->p_offset + phdr->p_filesz);
-	//	}
-	//}
 
 	ehdr_.e_shoff = sofile_.size();
 	ehdr_.e_shentsize = sizeof(Elf32_Shdr);
@@ -863,6 +849,69 @@ bool ElfFixer::fixShdrFromShdr()
 	return true;
 }
 
+//TODO: 根据正常so文件的.rel.dyn, .rel.plt修复需要重定位的地址
+bool ElfFixer::fixRel()
+{
+	//.rel.plt
+	{
+		Elf32_Rel* rel = si_->plt_rel;
+		unsigned count = si_->plt_rel_count;
+
+		Elf32_Sym* symtab = si_->symtab;
+		const char* strtab = si_->strtab;
+
+		//遍历重定位节 DT_JMPREL/DT_REL
+		for (size_t idx = 0; idx < count; ++idx, ++rel)
+		{
+			unsigned type = ELF32_R_TYPE(rel->r_info);
+			unsigned sym = ELF32_R_SYM(rel->r_info);
+			Elf32_Addr reloc = static_cast<Elf32_Addr>(rel->r_offset + si_->load_bias);	//需要重定位的地址
+
+			if (type == 0) // R_*_NONE
+			{
+				continue;
+			}
+			
+			Elf32_Addr addr = 0;
+			sofile_.seek(addrToOff(rel->r_offset));
+			sofile_.read((char *)&addr, sizeof(Elf32_Addr));
+
+			*reinterpret_cast<Elf32_Addr*>(reloc) = addr;
+		}
+	}
+
+	//.rel.dyn
+	{
+		Elf32_Rel* rel = si_->rel;
+		unsigned count = si_->rel_count;
+
+		Elf32_Sym* symtab = si_->symtab;
+		const char* strtab = si_->strtab;
+
+		//遍历重定位节 DT_JMPREL/DT_REL
+		for (size_t idx = 0; idx < count; ++idx, ++rel)
+		{
+			unsigned type = ELF32_R_TYPE(rel->r_info);
+			unsigned sym = ELF32_R_SYM(rel->r_info);
+			Elf32_Addr reloc = static_cast<Elf32_Addr>(rel->r_offset + si_->load_bias);	//需要重定位的地址
+
+			if (type == 0) // R_*_NONE
+			{
+				continue;
+			}
+
+			Elf32_Addr addr = 0;
+			sofile_.seek(addrToOff(rel->r_offset));
+			sofile_.read((char *)&addr, sizeof(Elf32_Addr));
+
+			*reinterpret_cast<Elf32_Addr*>(reloc) = addr;
+		}
+	}
+
+	return true;
+}
+
+
 Elf32_Off ElfFixer::addrToOff(Elf32_Addr addr)
 {
 	const Elf32_Phdr* phdr = si_->phdr;
@@ -909,12 +958,14 @@ Elf32_Off ElfFixer::addrToOff(Elf32_Addr addr)
 	return off;
 }
 
+//由于一块文件可能映射到多块内存, 该函数可能不准确
+//但是一个节一般只会映射一次, 正常不会出问题
 Elf32_Addr ElfFixer::offToAddr(Elf32_Off off)
 {
 	const Elf32_Phdr* phdr = si_->phdr;
 	const Elf32_Phdr* phdr_limit = phdr + si_->phnum;
 	Elf32_Off addr = -1;
-
+	
 	for (phdr = si_->phdr; phdr < phdr_limit; phdr++)
 	{
 		if (phdr->p_type != PT_LOAD)
@@ -937,7 +988,7 @@ Elf32_Addr ElfFixer::offToAddr(Elf32_Off off)
 		Elf32_Addr file_page_start = PAGE_START(file_start); //文件映射页首地址
 		Elf32_Addr file_length = file_end - file_page_start; //文件映射大小
 
-															 //如果没有可写权限, 修正文件的实际映射大小
+		//如果没有可写权限, 修正文件的实际映射大小
 		if ((phdr->p_flags & PF_W) == 0)
 		{
 			seg_file_end = PAGE_END(seg_file_end);

@@ -7,7 +7,7 @@
 
 const Helper::Command Helper::cmdSo =
 {
-	QSTR8BIT("请选择修复类型:\n1.正常So文件\n2.Dump So文件"),
+	QSTR8BIT("请选择修复文件类型:\n1.正常So文件\n2.Dump So文件"),
 	2,
 	{ elfFixNormalSo , elfFixDumpSo }
 };
@@ -18,7 +18,7 @@ void Helper::elfFixNormalSo()
 	QTextStream qin(stdin);
 	QString sopath;
 
-	qout << QSTR8BIT("请输入正常so文件路径:") << endl;
+	qout << QSTR8BIT("请输入待修复的正常so文件路径:") << endl;
 	qin >> sopath;
 
 	elfFixSo(sopath.toLocal8Bit(), nullptr);
@@ -31,10 +31,10 @@ void Helper::elfFixDumpSo()
 	QString sopath;
 	QString dumppath;
 
-	qout << QSTR8BIT("请输入正常so文件路径:") << endl;
+	qout << QSTR8BIT("请输入用于辅助修复的正常so文件路径:") << endl;
 	qin >> sopath;
 
-	qout << QSTR8BIT("请输入dump so文件路径:") << endl;
+	qout << QSTR8BIT("请输入待修复的dump so文件路径:") << endl;
 	qin >> dumppath;
 
 	elfFixSo(sopath.toLocal8Bit(), dumppath.toLocal8Bit());
