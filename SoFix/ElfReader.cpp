@@ -5,25 +5,37 @@
 
 #define DL_ERR qDebug
 
-ElfReader::ElfReader(const char* path, bool dump)
-	: path_(nullptr), phdr_num_(0), phdr_mmap_(NULL),
+ElfReader::ElfReader(const char* sopath, const char* dumppath)
+	: sopath_(nullptr), dumppath_(nullptr), phdr_num_(0), phdr_mmap_(NULL),
 	phdr_table_(NULL), phdr_size_(0), load_start_(NULL),
-	load_size_(0), load_bias_(0), loaded_phdr_(NULL), dump_(dump)
+	load_size_(0), load_bias_(0), loaded_phdr_(NULL)
 {
-	if (path)
+	if (sopath)
 	{
-		path_ = strdup(path);
-		file_.setFileName(QSTR8BIT(path));
+		sopath_ = strdup(sopath);
+		sofile_.setFileName(QSTR8BIT(sopath));
+	}
+
+	if (dumppath)
+	{
+		dumppath_ = strdup(dumppath);
+		dumpfile_.setFileName(QSTR8BIT(dumppath));
 	}
 }
 
 ElfReader::~ElfReader()
 {
-	if (path_)
+	if (sopath_)
 	{
-		free(path_);
+		free(sopath_);
 	}
-	file_.close();
+	sofile_.close();
+
+	if (dumppath_)
+	{
+		free(dumppath_);
+	}
+	dumpfile_.close();
 
 	if (phdr_mmap_ != NULL)
 	{
@@ -34,37 +46,53 @@ ElfReader::~ElfReader()
 //完成elf的加载
 bool ElfReader::Load()
 {
-	if (!dump_)
+	//如果是正常的so文件, 则参考linker源码进行加载
+	bool loaded = OpenElf() &&
+		ReadElfHeader() &&
+		VerifyElfHeader() &&
+		ReadProgramHeader() &&
+		ReserveAddressSpace() &&
+		LoadSegments() &&
+		FindPhdr();
+
+	if (loaded && dumppath_)//如果修复的是dump so, 直接偷梁换柱
 	{
-		return OpenElf() &&
-			ReadElfHeader() &&
-			VerifyElfHeader() &&
-			ReadProgramHeader() &&
-			ReserveAddressSpace() &&
-			LoadSegments() &&
-			FindPhdr();
+		if (dumpfile_.open(QIODevice::ReadWrite | QIODevice::ExistingOnly))
+		{
+			qint64 rc = dumpfile_.read((char *)load_start_, load_size_);
+			if (rc != load_size_)
+			{
+				return false;
+			}
+
+			return true;
+		}
+		else
+		{
+			return false;
+		}
 	}
 
-	return false;
+	return loaded;
 }
 
 bool ElfReader::OpenElf()
 {
-	return file_.open(QIODevice::ReadWrite | QIODevice::ExistingOnly);
+	return sofile_.open(QIODevice::ReadWrite | QIODevice::ExistingOnly);
 }
 
 bool ElfReader::ReadElfHeader()
 {
 	//成功返回读取的字节数, 出错返回-1并设置errno, 如果在调read之前已到达文件末尾, 则这次read返回0
-	qint64 rc = file_.read((char *)&header_, sizeof(header_));
+	qint64 rc = sofile_.read((char *)&header_, sizeof(header_));
 	if (rc < 0)
 	{
-		DL_ERR("can't read file \"%s\"", path_);
+		DL_ERR("can't read file \"%s\"", sopath_);
 		return false;
 	}
 	if (rc != sizeof(header_))
 	{
-		DL_ERR("\"%s\" is too small to be an ELF executable", path_);
+		DL_ERR("\"%s\" is too small to be an ELF executable", sopath_);
 		return false;
 	}
 
@@ -78,36 +106,36 @@ bool ElfReader::VerifyElfHeader()
 		header_.e_ident[EI_MAG2] != ELFMAG2 ||
 		header_.e_ident[EI_MAG3] != ELFMAG3)
 	{
-		DL_ERR("\"%s\" has bad ELF magic", path_);
+		DL_ERR("\"%s\" has bad ELF magic", sopath_);
 		return false;
 	}
 
 	if (header_.e_ident[EI_CLASS] != ELFCLASS32)
 	{
-		DL_ERR("\"%s\" not 32-bit: %d", path_, header_.e_ident[EI_CLASS]);
+		DL_ERR("\"%s\" not 32-bit: %d", sopath_, header_.e_ident[EI_CLASS]);
 		return false;
 	}
 	if (header_.e_ident[EI_DATA] != ELFDATA2LSB)
 	{
-		DL_ERR("\"%s\" not little-endian: %d", path_, header_.e_ident[EI_DATA]);
+		DL_ERR("\"%s\" not little-endian: %d", sopath_, header_.e_ident[EI_DATA]);
 		return false;
 	}
 
 	if (header_.e_type != ET_DYN)
 	{
-		DL_ERR("\"%s\" has unexpected e_type: %d", path_, header_.e_type);
+		DL_ERR("\"%s\" has unexpected e_type: %d", sopath_, header_.e_type);
 		return false;
 	}
 
 	if (header_.e_version != EV_CURRENT)
 	{
-		DL_ERR("\"%s\" has unexpected e_version: %d", path_, header_.e_version);
+		DL_ERR("\"%s\" has unexpected e_version: %d", sopath_, header_.e_version);
 		return false;
 	}
 
 	if (header_.e_machine != EM_ARM)
 	{
-		DL_ERR("\"%s\" has unexpected e_machine: %d", path_, header_.e_machine);
+		DL_ERR("\"%s\" has unexpected e_machine: %d", sopath_, header_.e_machine);
 		return false;
 	}
 
@@ -122,7 +150,7 @@ bool ElfReader::ReadProgramHeader()
 	// are smaller than 64KiB.
 	if (phdr_num_ < 1 || phdr_num_ > 65536 / sizeof(Elf32_Phdr))
 	{
-		DL_ERR("\"%s\" has invalid e_phnum: %d", path_, phdr_num_);
+		DL_ERR("\"%s\" has invalid e_phnum: %d", sopath_, phdr_num_);
 		return false;
 	}
 
@@ -132,9 +160,9 @@ bool ElfReader::ReadProgramHeader()
 
 	phdr_size_ = page_max - page_min;//ph所占的页大小
 
-	void* mmap_result = Util::mmap(NULL, phdr_size_, file_, page_min);//将ph映射到内存中
+	void* mmap_result = Util::mmap(NULL, phdr_size_, sofile_, page_min);//将ph映射到内存中
 	if (mmap_result == nullptr) {
-		DL_ERR("\"%s\" phdr mmap failed", path_);
+		DL_ERR("\"%s\" phdr mmap failed", sopath_);
 		return false;
 	}
 
@@ -197,7 +225,7 @@ bool ElfReader::ReserveAddressSpace()
 	load_size_ = phdr_table_get_load_size(phdr_table_, phdr_num_, &min_vaddr); //获取可以存放所有的可加载的节的页大小
 	if (load_size_ == 0)
 	{
-		DL_ERR("\"%s\" has no loadable segments", path_);
+		DL_ERR("\"%s\" has no loadable segments", sopath_);
 		return false;
 	}
 
@@ -205,7 +233,7 @@ bool ElfReader::ReserveAddressSpace()
 	void* start = Util::mmap(nullptr, load_size_);
 	if (start == nullptr)
 	{
-		DL_ERR("couldn't reserve %d bytes of address space for \"%s\"", load_size_, path_);
+		DL_ERR("couldn't reserve %d bytes of address space for \"%s\"", load_size_, sopath_);
 		return false;
 	}
 
@@ -245,11 +273,11 @@ bool ElfReader::LoadSegments()
 		{
 			void* seg_addr = Util::mmap((void*)seg_page_start,
 				file_length,
-				file_,
+				sofile_,
 				file_page_start);
 			if (seg_addr == nullptr)
 			{
-				DL_ERR("couldn't map \"%s\" segment %d", path_, i);
+				DL_ERR("couldn't map \"%s\" segment %d", sopath_, i);
 				return false;
 			}
 		}
@@ -273,7 +301,7 @@ bool ElfReader::LoadSegments()
 			void* zeromap = Util::mmap((void*)seg_file_end, seg_page_end - seg_file_end);
 			if (zeromap == nullptr)
 			{
-				DL_ERR("couldn't zero fill \"%s\"", path_);
+				DL_ERR("couldn't zero fill \"%s\"", sopath_);
 				return false;
 			}
 		}
@@ -313,7 +341,7 @@ bool ElfReader::FindPhdr()
 		}
 	}
 
-	DL_ERR("can't find loaded phdr for \"%s\"", path_);
+	DL_ERR("can't find loaded phdr for \"%s\"", sopath_);
 	return false;
 }
 
@@ -337,6 +365,6 @@ bool ElfReader::CheckPhdr(Elf32_Addr loaded)
 			return true;
 		}
 	}
-	DL_ERR("\"%s\" loaded phdr %x not in loadable segment", path_, loaded);
+	DL_ERR("\"%s\" loaded phdr %x not in loadable segment", sopath_, loaded);
 	return false;
 }

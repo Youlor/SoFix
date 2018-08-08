@@ -35,9 +35,11 @@ private:
 
 	static Elf32_Word GetShdrName(int idx);
 
-	char *name_;	//修复后文件名称
-	soinfo *si_;	//待修复dump so或由ElfReader加载正常so文件得到的
-	QFile file_;
+	char *sopath_;		//正常so文件路径
+	char *fixedpath_;	//修复后文件路径
+	soinfo *si_;		//待修复dump so或由ElfReader加载正常so文件得到的
+	QFile sofile_;
+	QFile fixedfile_;
 
 	Elf32_Ehdr ehdr_;	//通过正常的so文件获取
 
@@ -46,7 +48,7 @@ private:
 	size_t phnum_;
 
 public:
-	ElfFixer(soinfo *si, Elf32_Ehdr ehdr, const char *name);
+	ElfFixer(soinfo *si, const char *sopath, const char *fixedpath);
 	~ElfFixer();
 	bool fix();
 	bool write();

@@ -27,13 +27,19 @@ Elf32_Word ElfFixer::GetShdrName(int idx)
 	return ret;
 }
 
-ElfFixer::ElfFixer(soinfo *si, Elf32_Ehdr ehdr, const char *name)
-	: si_(si), ehdr_(ehdr), phdr_(nullptr), phnum_(0)
+ElfFixer::ElfFixer(soinfo *si, const char *sopath, const char *fixedpath)
+	: si_(si), sopath_(nullptr), fixedpath_(nullptr), phdr_(nullptr), phnum_(0)
 {
-	if (name)
+	if (sopath)
 	{
-		name_ = strdup(name);
-		file_.setFileName(QSTR8BIT(name));
+		sopath_ = strdup(sopath);
+		sofile_.setFileName(QSTR8BIT(sopath));
+	}
+
+	if (fixedpath)
+	{
+		fixedpath_ = strdup(fixedpath);
+		fixedfile_.setFileName(QSTR8BIT(fixedpath));
 	}
 
 	memset(shdrs_, 0, sizeof(shdrs_));
@@ -41,11 +47,18 @@ ElfFixer::ElfFixer(soinfo *si, Elf32_Ehdr ehdr, const char *name)
 
 ElfFixer::~ElfFixer()
 {
-	if (name_)
+	if (sopath_)
 	{
-		free(name_);
+		free(sopath_);
 	}
-	file_.close();
+
+	if (fixedpath_)
+	{
+		free(fixedpath_);
+	}
+
+	sofile_.close();
+	fixedfile_.close();
 }
 
 bool ElfFixer::fix()
@@ -57,51 +70,85 @@ bool ElfFixer::fix()
 
 bool ElfFixer::write()
 {
-	if (!file_.open(QIODevice::ReadWrite))
+	if (!fixedfile_.open(QIODevice::ReadWrite))
 	{
 		return false;
 	}
 
 	const Elf32_Phdr* phdr = phdr_;
 	const Elf32_Phdr* phdr_limit = phdr + phnum_;
+	Elf32_Off phdr_min_off = 0;
+	Elf32_Off phdr_max_off = 0;
 
-	//考虑到段数据可能运行时被改变, 这里从dump后文件中读取
+	//考虑到段数据可能运行时被改变, 这里从dump后文件中读取段数据并写入到文件
 	for (phdr = phdr_; phdr < phdr_limit; phdr++)
 	{
-		file_.seek(PAGE_START(phdr->p_offset));
-		file_.write((char *)(PAGE_START(si_->load_bias + phdr->p_vaddr)), PAGE_END(phdr->p_filesz));
+		if (phdr->p_type != PT_LOAD)
+		{
+			continue;
+		}
+
+		fixedfile_.seek(PAGE_START(phdr->p_offset));
+		fixedfile_.write((char *)(PAGE_START(si_->load_bias + phdr->p_vaddr)), PAGE_END(phdr->p_filesz));
+
+		phdr_min_off = MIN(phdr_min_off, PAGE_START(phdr->p_offset));
+		phdr_max_off = MAX(phdr_max_off, PAGE_START(phdr->p_offset) + PAGE_END(phdr->p_filesz));
+	}
+
+	//从正常so文件中拷贝0到段头部之间的数据
+	if (phdr_min_off > 0)
+	{
+		char *readbytes = (char *)malloc(phdr_min_off);
+		sofile_.seek(0);
+		sofile_.read(readbytes, phdr_min_off);
+
+		fixedfile_.seek(0);
+		fixedfile_.write(readbytes, phdr_min_off);
+		free(readbytes);
 	}
 
 	//Elf头部应该在段数据写入之后写入, 避免被段数据覆盖
-	file_.seek(0);
-	file_.write((char *)&ehdr_, sizeof(Elf32_Ehdr));
-	file_.seek(ehdr_.e_phoff);
-	file_.write((char *)phdr_, ehdr_.e_phnum + sizeof(Elf32_Phdr));
+	fixedfile_.seek(0);
+	fixedfile_.write((char *)&ehdr_, sizeof(Elf32_Ehdr));
+	fixedfile_.seek(ehdr_.e_phoff);
+	fixedfile_.write((char *)phdr_, ehdr_.e_phnum + sizeof(Elf32_Phdr));
+
+	//从正常so文件中读取段数据之后的文件数据
+	if (phdr_max_off < sofile_.size())
+	{
+		char *readbytes = (char *)malloc(sofile_.size() - phdr_max_off);
+		sofile_.seek(phdr_max_off);
+		sofile_.read(readbytes, sofile_.size() - phdr_max_off);
+
+		fixedfile_.seek(phdr_max_off);
+		fixedfile_.write(readbytes, sofile_.size() - phdr_max_off);
+		free(readbytes);
+	}
 
 	//写入节头
-	file_.seek(ehdr_.e_shoff);
-	file_.write((char *)&shdrs_[SI_NULL], sizeof(Elf32_Shdr));
-	file_.write((char *)&shdrs_[SI_DYNSYM], sizeof(Elf32_Shdr));
-	file_.write((char *)&shdrs_[SI_DYNSTR], sizeof(Elf32_Shdr));
-	file_.write((char *)&shdrs_[SI_HASH], sizeof(Elf32_Shdr));
-	file_.write((char *)&shdrs_[SI_RELDYN], sizeof(Elf32_Shdr));
-	file_.write((char *)&shdrs_[SI_RELPLT], sizeof(Elf32_Shdr));
-	file_.write((char *)&shdrs_[SI_PLT], sizeof(Elf32_Shdr));
-	file_.write((char *)&shdrs_[SI_TEXT], sizeof(Elf32_Shdr));
-	file_.write((char *)&shdrs_[SI_ARMEXIDX], sizeof(Elf32_Shdr));
-	file_.write((char *)&shdrs_[SI_RODATA], sizeof(Elf32_Shdr));
-	file_.write((char *)&shdrs_[SI_FINI_ARRAY], sizeof(Elf32_Shdr));
-	file_.write((char *)&shdrs_[SI_INIT_ARRAY], sizeof(Elf32_Shdr));
-	file_.write((char *)&shdrs_[SI_DATA_REL_RO], sizeof(Elf32_Shdr));
-	file_.write((char *)&shdrs_[SI_DYNAMIC], sizeof(Elf32_Shdr));
-	file_.write((char *)&shdrs_[SI_GOT], sizeof(Elf32_Shdr));
-	file_.write((char *)&shdrs_[SI_DATA], sizeof(Elf32_Shdr));
-	file_.write((char *)&shdrs_[SI_BSS], sizeof(Elf32_Shdr));
-	file_.write((char *)&shdrs_[SI_SHSTRTAB], sizeof(Elf32_Shdr));
+	fixedfile_.seek(ehdr_.e_shoff);
+	fixedfile_.write((char *)&shdrs_[SI_NULL], sizeof(Elf32_Shdr));
+	fixedfile_.write((char *)&shdrs_[SI_DYNSYM], sizeof(Elf32_Shdr));
+	fixedfile_.write((char *)&shdrs_[SI_DYNSTR], sizeof(Elf32_Shdr));
+	fixedfile_.write((char *)&shdrs_[SI_HASH], sizeof(Elf32_Shdr));
+	fixedfile_.write((char *)&shdrs_[SI_RELDYN], sizeof(Elf32_Shdr));
+	fixedfile_.write((char *)&shdrs_[SI_RELPLT], sizeof(Elf32_Shdr));
+	fixedfile_.write((char *)&shdrs_[SI_PLT], sizeof(Elf32_Shdr));
+	fixedfile_.write((char *)&shdrs_[SI_TEXT], sizeof(Elf32_Shdr));
+	fixedfile_.write((char *)&shdrs_[SI_ARMEXIDX], sizeof(Elf32_Shdr));
+	fixedfile_.write((char *)&shdrs_[SI_RODATA], sizeof(Elf32_Shdr));
+	fixedfile_.write((char *)&shdrs_[SI_FINI_ARRAY], sizeof(Elf32_Shdr));
+	fixedfile_.write((char *)&shdrs_[SI_INIT_ARRAY], sizeof(Elf32_Shdr));
+	fixedfile_.write((char *)&shdrs_[SI_DATA_REL_RO], sizeof(Elf32_Shdr));
+	fixedfile_.write((char *)&shdrs_[SI_DYNAMIC], sizeof(Elf32_Shdr));
+	fixedfile_.write((char *)&shdrs_[SI_GOT], sizeof(Elf32_Shdr));
+	fixedfile_.write((char *)&shdrs_[SI_DATA], sizeof(Elf32_Shdr));
+	fixedfile_.write((char *)&shdrs_[SI_BSS], sizeof(Elf32_Shdr));
+	fixedfile_.write((char *)&shdrs_[SI_SHSTRTAB], sizeof(Elf32_Shdr));
 
 	//写入节头名称
-	file_.seek(shdrs_[SI_SHSTRTAB].sh_offset);
-	file_.write(strtab, shdrs_[SI_SHSTRTAB].sh_size);
+	fixedfile_.seek(shdrs_[SI_SHSTRTAB].sh_offset);
+	fixedfile_.write(strtab, shdrs_[SI_SHSTRTAB].sh_size);
 
 	return true;
 }
@@ -110,21 +157,30 @@ bool ElfFixer::fixEhdr()
 {
 	qDebug("[fixEhdr] fix ehdr...");
 
-	//将shdr放在可加载段数据的尾部
-	const Elf32_Phdr* phdr = si_->phdr;
-	const Elf32_Phdr* phdr_limit = phdr + si_->phnum;
-
-	Elf32_Off max_off = 0;
-
-	for (phdr = si_->phdr; phdr < phdr_limit; phdr++)
+	//从正常so文件中读取elf头部
+	if (sofile_.open(QIODevice::ReadOnly | QIODevice::ExistingOnly))
 	{
-		if (PAGE_END(phdr->p_offset + phdr->p_filesz) > max_off)
+		qint64 rc = sofile_.read((char *)&ehdr_, sizeof(Elf32_Ehdr));
+		if (rc != sizeof(Elf32_Ehdr))
 		{
-			max_off = PAGE_END(phdr->p_offset + phdr->p_filesz);
+			return false;
 		}
 	}
 
-	ehdr_.e_shoff = max_off;
+	//将shdr放在可加载段数据的尾部 ==> TODO 放在整个原so文件的尾部, 防止覆盖原有数据
+	//const Elf32_Phdr* phdr = si_->phdr;
+	//const Elf32_Phdr* phdr_limit = phdr + si_->phnum;
+	//Elf32_Off max_off = 0;
+
+	//for (phdr = si_->phdr; phdr < phdr_limit; phdr++)
+	//{
+	//	if (PAGE_END(phdr->p_offset + phdr->p_filesz) > max_off)
+	//	{
+	//		max_off = PAGE_END(phdr->p_offset + phdr->p_filesz);
+	//	}
+	//}
+
+	ehdr_.e_shoff = sofile_.size();
 	ehdr_.e_shentsize = sizeof(Elf32_Shdr);
 	ehdr_.e_shnum = SI_MAX;
 	ehdr_.e_shstrndx = SI_SHSTRTAB;
@@ -514,6 +570,8 @@ bool ElfFixer::fixDynsym()
 }
 
 //这里的修复可能不够准确, 因为信息不够全, 只能尝试修复
+//最好结合ida人肉修正, 如果修复不准确的话
+//关于节的重叠问题, 由于并不影响IDA的分析和so的动态链接执行, 这里不做处理
 bool ElfFixer::fixShdrFromShdr()
 {
 	qDebug("[fixShdrFromShdr] fix shdr: .plt, .got, .data.rel.ro, .text, .rodata, .data, .bss ...");

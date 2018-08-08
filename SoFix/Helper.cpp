@@ -26,14 +26,25 @@ void Helper::elfFixNormalSo()
 
 void Helper::elfFixDumpSo()
 {
-	
+	QTextStream qout(stdout);
+	QTextStream qin(stdin);
+	QString sopath;
+	QString dumppath;
+
+	qout << QSTR8BIT("请输入正常so文件路径:") << endl;
+	qin >> sopath;
+
+	qout << QSTR8BIT("请输入dump so文件路径:") << endl;
+	qin >> dumppath;
+
+	elfFixSo(sopath.toLocal8Bit(), dumppath.toLocal8Bit());
 }
 
+//如果dumppath为空则直接修复正常so文件, 否则根据根据正常so文件修复dump文件
 bool Helper::elfFixSo(const char *sopath, const char *dumppath)
 {
 	const char *name = dumppath ? dumppath : sopath;
-	bool dump = dumppath ? true : false;
-	ElfReader elf_reader(name, dump);
+	ElfReader elf_reader(sopath, dumppath);
 	QTextStream qout(stdout);
 
 	if (elf_reader.Load())
@@ -47,8 +58,9 @@ bool Helper::elfFixSo(const char *sopath, const char *dumppath)
 
 			const char* bname = strrchr(name, '\\');//返回最后一次出现"/"之后的字符串, 即获取不含路径的文件名
 			soinfo* si = soinfo_alloc(bname ? bname + 1 : name);//分配soinfo内存, 将内存初始化为0, name拷贝
-			if (si == NULL) 
+			if (si == NULL)
 			{
+				qout << QSTR8BIT("抱歉, 文件名不能超过128个字符!") << endl;
 				return NULL;
 			}
 
@@ -62,20 +74,9 @@ bool Helper::elfFixSo(const char *sopath, const char *dumppath)
 			si->phnum = elf_reader.phdr_count();
 			si->phdr = elf_reader.loaded_phdr();
 
-			QFile sofile(QSTR8BIT(sopath));
-			Elf32_Ehdr ehdr;
-			if (sofile.open(QIODevice::ReadOnly | QIODevice::ExistingOnly))
-			{
-				qint64 rc = sofile.read((char *)&ehdr, sizeof(Elf32_Ehdr));
-				if (rc != sizeof(Elf32_Ehdr))
-				{
-					return false;
-				}
-			}
-
 			QString fixedpath = QSTR8BIT(name) + ".fixed";
 			
-			ElfFixer elf_fixer(si, ehdr, fixedpath.toLocal8Bit());
+			ElfFixer elf_fixer(si, sopath, fixedpath.toLocal8Bit());
 			if (elf_fixer.fix() && elf_fixer.write())
 			{
 				qout << QSTR8BIT("修复成功!修复后文件路径: ") + fixedpath << endl;

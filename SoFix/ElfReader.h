@@ -6,7 +6,7 @@
 class ElfReader 
 {
 public:
-	ElfReader(const char* path, bool dump);
+	ElfReader(const char* sopath, const char *dumppath);
 	~ElfReader();
 
 	bool Load();
@@ -29,9 +29,11 @@ private:
 	bool FindPhdr();
 	bool CheckPhdr(Elf32_Addr);
 
-	char* path_;	//待修复文件路径
-	bool dump_;
-	QFile file_;
+	char* sopath_;		//正常so
+	char* dumppath_;	//待修复dump so, 如果为空说明修复正常so
+
+	QFile sofile_;
+	QFile dumpfile_;
 
 	Elf32_Ehdr header_;			//elf文件头部
 	size_t phdr_num_;			//程序头表项数量
