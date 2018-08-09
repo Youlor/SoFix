@@ -7,7 +7,8 @@
 
 const Helper::Command Helper::cmdSo =
 {
-	QSTR8BIT("请选择修复文件类型:\n1.正常So文件\n2.Dump So文件"),
+	QSTR8BIT("------------Android Arm so Fix Tool, By Youlor, Reference ThomasKing------------\n"
+	"请选择修复文件类型:\n1.正常So文件\n2.Dump So文件"),
 	2,
 	{ elfFixNormalSo , elfFixDumpSo }
 };
@@ -80,6 +81,10 @@ bool Helper::elfFixSo(const char *sopath, const char *dumppath)
 			if (elf_fixer.fix() && elf_fixer.write())
 			{
 				qout << QSTR8BIT("修复成功!修复后文件路径: ") + fixedpath << endl;
+			}
+			else
+			{
+				qout << QSTR8BIT("so修复失败, 可能不是有效的so文件(不包含DT_DYNAMIC, DT_HASH, DT_STRTAB, DT_SYMTAB)") + fixedpath << endl;
 			}
 		}
 	}

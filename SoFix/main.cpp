@@ -15,6 +15,7 @@ int main(int argc, char *argv[])
 	if (input > Helper::cmdSo.cmdCount || input < 1)
 	{
 		qout << QSTR8BIT("ÎÞÐ§ÊäÈë...") << endl;
+		system("pause");
 		return 0;
 	}
 
