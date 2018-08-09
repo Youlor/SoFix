@@ -51,7 +51,7 @@ bool Helper::elfFixSo(const char *sopath, const char *dumppath)
 	{
 		QString loadedpath = QSTR8BIT(name) + ".loaded";
 		QFile loadedFile(loadedpath);
-		if (loadedFile.open(QIODevice::ReadWrite))
+		if (loadedFile.open(QIODevice::WriteOnly | QIODevice::Truncate))
 		{
 			loadedFile.write((char *)elf_reader.load_start(), elf_reader.load_size());
 			qout << QSTR8BIT("加载成功!加载后文件路径: ") + loadedpath << endl;

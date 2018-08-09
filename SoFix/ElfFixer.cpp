@@ -71,7 +71,7 @@ bool ElfFixer::fix()
 
 bool ElfFixer::write()
 {
-	if (!fixedfile_.open(QIODevice::ReadWrite))
+	if (!fixedfile_.open(QIODevice::ReadWrite | QIODevice::Truncate))
 	{
 		return false;
 	}
@@ -81,7 +81,9 @@ bool ElfFixer::write()
 	Elf32_Off phdr_min_off = 0;
 	Elf32_Off phdr_max_off = 0;
 
-	//考虑到段数据可能运行时被改变, 这里从dump后文件中读取段数据并写入到文件
+	//考虑到段数据可能运行时被改变, 这里从dump后文件中读取段数据并写入到文件, 
+	//有的文件块会映射到多个内存块, 不知道该将哪个内存块写回文件...
+	//这里做这样的处理: 比对原正常so, 把不同的写进去
 	for (phdr = phdr_; phdr < phdr_limit; phdr++)
 	{
 		if (phdr->p_type != PT_LOAD)
@@ -89,11 +91,33 @@ bool ElfFixer::write()
 			continue;
 		}
 
-		fixedfile_.seek(PAGE_START(phdr->p_offset));
-		fixedfile_.write((char *)(PAGE_START(si_->load_bias + phdr->p_vaddr)), PAGE_END(phdr->p_filesz));
+		Elf32_Addr file_page_start = PAGE_START(phdr->p_offset);
+		Elf32_Addr file_page_end = PAGE_START(phdr->p_offset) + PAGE_END(phdr->p_filesz);	
 
-		phdr_min_off = MIN(phdr_min_off, PAGE_START(phdr->p_offset));
-		phdr_max_off = MAX(phdr_max_off, PAGE_START(phdr->p_offset) + PAGE_END(phdr->p_filesz));
+		//求取[file_page_start, file_page_end)和[phdr_min_off, phdr_max_off)的交集
+		if (MAX(file_page_start, phdr_min_off) < MIN(file_page_end, phdr_max_off))
+		{
+			Elf32_Addr overlap_size = MIN(file_page_end, phdr_max_off) - MAX(file_page_start, phdr_min_off);
+			char *overlap = (char *)malloc(overlap_size);
+			sofile_.seek(MAX(file_page_start, phdr_min_off));
+			sofile_.read(overlap, overlap_size);
+			if (memcmp(overlap, (char *)(PAGE_START(si_->load_bias + phdr->p_vaddr)), overlap_size))
+			{
+				fixedfile_.seek(file_page_start);
+				fixedfile_.write((char *)(PAGE_START(si_->load_bias + phdr->p_vaddr)), overlap_size);
+			}
+
+			fixedfile_.seek(file_page_start + overlap_size);
+			fixedfile_.write((char *)(PAGE_START(si_->load_bias + phdr->p_vaddr) + overlap_size), PAGE_END(phdr->p_filesz) - overlap_size);
+		}
+		else
+		{
+			fixedfile_.seek(file_page_start);
+			fixedfile_.write((char *)(PAGE_START(si_->load_bias + phdr->p_vaddr)), PAGE_END(phdr->p_filesz));
+		}
+
+		phdr_min_off = MIN(phdr_min_off, file_page_start);
+		phdr_max_off = MAX(phdr_max_off, file_page_end);
 	}
 
 	//从正常so文件中拷贝0到段头部之间的数据
@@ -849,7 +873,7 @@ bool ElfFixer::fixShdrFromShdr()
 	return true;
 }
 
-//TODO: 根据正常so文件的.rel.dyn, .rel.plt修复需要重定位的地址
+//根据正常so文件的.rel.dyn, .rel.plt修复需要重定位的地址
 bool ElfFixer::fixRel()
 {
 	//.rel.plt

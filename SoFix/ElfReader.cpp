@@ -57,7 +57,7 @@ bool ElfReader::Load()
 
 	if (loaded && dumppath_)//如果修复的是dump so, 直接偷梁换柱
 	{
-		if (dumpfile_.open(QIODevice::ReadWrite | QIODevice::ExistingOnly))
+		if (dumpfile_.open(QIODevice::ReadOnly | QIODevice::ExistingOnly))
 		{
 			qint64 rc = dumpfile_.read((char *)load_start_, load_size_);
 			if (rc != load_size_)
@@ -78,7 +78,7 @@ bool ElfReader::Load()
 
 bool ElfReader::OpenElf()
 {
-	return sofile_.open(QIODevice::ReadWrite | QIODevice::ExistingOnly);
+	return sofile_.open(QIODevice::ReadOnly | QIODevice::ExistingOnly);
 }
 
 bool ElfReader::ReadElfHeader()
