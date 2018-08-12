@@ -20,6 +20,8 @@ public:
 
 	static const Command cmdSo;
 	static void elfFixNormalSo();
+	static void elfFixDumpSoFromNormal();
+	static bool elfDumpSoToNormal(QString &dumppath);
 	static void elfFixDumpSo();
 	static bool elfFixSo(const char *sopath, const char *dumppath);
 };

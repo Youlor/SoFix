@@ -85,6 +85,7 @@ private:
 
 	//返回文件中记录的内存地址所在的节, -1表示没找到
 	int findShIdx(Elf32_Addr addr);
+
 	bool fixRel();
 };
 

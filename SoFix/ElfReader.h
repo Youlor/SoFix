@@ -16,6 +16,7 @@ public:
 	Elf32_Addr load_size() { return load_size_; }
 	Elf32_Addr load_bias() { return load_bias_; }
 	const Elf32_Phdr* loaded_phdr() { return loaded_phdr_; }
+	Elf32_Ehdr header() { return header_; }
 
 private:
 	bool OpenElf();

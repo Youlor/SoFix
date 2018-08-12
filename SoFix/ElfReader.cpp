@@ -46,32 +46,63 @@ ElfReader::~ElfReader()
 //完成elf的加载
 bool ElfReader::Load()
 {
-	//如果是正常的so文件, 则参考linker源码进行加载
-	bool loaded = OpenElf() &&
-		ReadElfHeader() &&
-		VerifyElfHeader() &&
-		ReadProgramHeader() &&
-		ReserveAddressSpace() &&
-		LoadSegments() &&
-		FindPhdr();
-
-	if (loaded && dumppath_)//如果修复的是dump so, 直接偷梁换柱
+	bool loaded = false;
+	if (sopath_)
 	{
-		if (dumpfile_.open(QIODevice::ReadOnly | QIODevice::ExistingOnly))
+		//如果是正常的so文件, 则参考linker源码进行加载
+		loaded = OpenElf() &&
+			ReadElfHeader() &&
+			VerifyElfHeader() &&
+			ReadProgramHeader() &&
+			ReserveAddressSpace() &&
+			LoadSegments() &&
+			FindPhdr();
+
+		if (loaded && dumppath_) //如果根据正常的so, 修复dump so, 直接偷梁换柱
 		{
-			qint64 rc = dumpfile_.read((char *)load_start_, load_size_);
-			if (rc != load_size_)
+			if (dumpfile_.open(QIODevice::ReadOnly | QIODevice::ExistingOnly))
+			{
+				dumpfile_.read((char *)load_start_, load_size_);
+				return true;
+			}
+			else
 			{
 				return false;
 			}
-
-			return true;
-		}
-		else
-		{
-			return false;
 		}
 	}
+	else if(dumppath_)
+	{
+		//如果仅仅修复dump so, 读取dump文件获取Elf头部信息
+		//This is Ugly...
+		sopath_ = strdup(dumppath_);
+		sofile_.setFileName(QSTR8BIT(dumppath_));
+
+		if (OpenElf() && ReadElfHeader() && VerifyElfHeader() && ReadProgramHeader())
+		{
+			Elf32_Addr min_vaddr;
+			load_size_ = phdr_table_get_load_size(phdr_table_, phdr_num_, &min_vaddr); //获取可以存放所有的可加载的节的页大小
+			if (load_size_ == 0)
+			{
+				DL_ERR("\"%s\" has no loadable segments", sopath_);
+				return false;
+			}
+
+			uint8_t* addr = reinterpret_cast<uint8_t*>(min_vaddr);
+			void* start = Util::mmap(NULL, sofile_.size(), sofile_, 0);
+			if (start == nullptr)
+			{
+				DL_ERR("couldn't reserve %d bytes of address space for \"%s\"", load_size_, sopath_);
+				return false;
+			}
+
+			load_start_ = start;
+			load_bias_ = reinterpret_cast<uint8_t*>(start) - addr;
+
+			loaded = FindPhdr();
+		}
+	}
+	
 
 	return loaded;
 }
@@ -84,6 +115,7 @@ bool ElfReader::OpenElf()
 bool ElfReader::ReadElfHeader()
 {
 	//成功返回读取的字节数, 出错返回-1并设置errno, 如果在调read之前已到达文件末尾, 则这次read返回0
+	sofile_.seek(0);
 	qint64 rc = sofile_.read((char *)&header_, sizeof(header_));
 	if (rc < 0)
 	{
@@ -161,7 +193,8 @@ bool ElfReader::ReadProgramHeader()
 	phdr_size_ = page_max - page_min;//ph所占的页大小
 
 	void* mmap_result = Util::mmap(NULL, phdr_size_, sofile_, page_min);//将ph映射到内存中
-	if (mmap_result == nullptr) {
+	if (mmap_result == nullptr)
+	{
 		DL_ERR("\"%s\" phdr mmap failed", sopath_);
 		return false;
 	}

@@ -199,7 +199,7 @@ bool ElfFixer::fixEhdr()
 	DEBUG("[fixEhdr] fix ehdr...");
 
 	//从正常so文件中读取elf头部
-	if (sofile_.open(QIODevice::ReadOnly | QIODevice::ExistingOnly))
+	if (sopath_ && sofile_.open(QIODevice::ReadOnly | QIODevice::ExistingOnly))
 	{
 		qint64 rc = sofile_.read((char *)&ehdr_, sizeof(Elf32_Ehdr));
 		if (rc != sizeof(Elf32_Ehdr))
@@ -705,6 +705,7 @@ bool ElfFixer::fixShdrFromShdr()
 	}
 
 	//修复.data.rel.ro节, 通过遍历.rel.dyn节中类型为R_ARM_ABS32的范围来确定, 起始地址-4即可
+	if(1)
 	{
 		DEBUG("[fixShdrFromShdr] fix .data.rel.ro...");
 		Elf32_Addr data_rel_ro_start = 0;
@@ -749,6 +750,7 @@ bool ElfFixer::fixShdrFromShdr()
 	}
 
 	//修复.text节, 简单的将.plt/.rel.plt/.rel.dyn/.hash之后到.ARM.exidx/.fini_array/.init_array/.data.rel.ro/.dynamic之间的节视为.text, 之后可以通过IDA反汇编人肉修复
+	if(1)
 	{
 		DEBUG("[fixShdrFromShdr] fix .text...");
 
@@ -812,6 +814,7 @@ bool ElfFixer::fixShdrFromShdr()
 	}
 
 	//修复.rodata节, 简单的将.ARM.exidx/.text/.plt/.rel.plt/.rel.dyn/.hash之后和fini_array/.init_array/.data.rel.ro/.dynamic之间节视为.rodata
+	if(1)
 	{
 		DEBUG("[fixShdrFromShdr] fix .rodata...");
 
@@ -879,6 +882,7 @@ bool ElfFixer::fixShdrFromShdr()
 	}
 
 	//修复.data节, 简单的将.got/.dynamic之后到可加载段的实际文件映射范围视为.data节
+	if(1)
 	{
 		DEBUG("[fixShdrFromShdr] fix .data...");
 
@@ -924,6 +928,7 @@ bool ElfFixer::fixShdrFromShdr()
 	}
 
 	//修复.bss节, 简单的将.data/.got/.dynamic节之后到可加载段的实际内存地址视为.bss节
+	if (1)
 	{
 		DEBUG("[fixShdrFromShdr] fix .bss...");
 
@@ -1073,6 +1078,7 @@ Elf32_Off ElfFixer::addrToOff(Elf32_Addr addr)
 		{
 			seg_file_end = PAGE_END(seg_file_end);
 			file_end = PAGE_END(file_end);
+			file_length = PAGE_END(file_length);
 		}
 
 		//判断addr是否在LOAD段中
@@ -1121,6 +1127,7 @@ Elf32_Addr ElfFixer::offToAddr(Elf32_Off off)
 		{
 			seg_file_end = PAGE_END(seg_file_end);
 			file_end = PAGE_END(file_end);
+			file_length = PAGE_END(file_length);
 		}
 
 		//判断off是否在LOAD段中
@@ -1145,6 +1152,6 @@ int ElfFixer::findShIdx(Elf32_Addr addr)
 			break;
 		}
 	}
-
+	
 	return idx;
 }
