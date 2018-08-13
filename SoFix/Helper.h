@@ -19,10 +19,12 @@ public:
 	~Helper() = delete;
 
 	static const Command cmdSo;
-	static void elfFixNormalSo();
-	static void elfFixDumpSoFromNormal();
+	static void Exit();
+	static void ElfFixNormalSo();
+	static void ElfFixDumpSoFromNormal();
 	static bool elfDumpSoToNormal(QString &dumppath);
-	static void elfFixDumpSo();
+	static void ElfFixDumpSo();
 	static bool elfFixSo(const char *sopath, const char *dumppath);
+	static void ElfRebuild();
 };
 

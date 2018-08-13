@@ -1,5 +1,6 @@
 #include <QTextStream>
 #include <Helper.h>
+#include "ElfBuilder.h"
 
 #define QSTR8BIT(s) (QString::fromLocal8Bit(s))
 
@@ -9,17 +10,20 @@ int main(int argc, char *argv[])
 	QTextStream qin(stdin);
 	int input = 0;
 
-	qout << Helper::cmdSo.description << endl;
-	qin >> input;
-
-	if (input > Helper::cmdSo.cmdCount || input < 1)
+	while (true)
 	{
-		qout << QSTR8BIT("无效输入...") << endl;
-		system("pause");
-		return 0;
-	}
+		qout << Helper::cmdSo.description << endl;
+		qin >> input;
+		if (input > Helper::cmdSo.cmdCount || input < 1)
+		{
+			qout << QSTR8BIT("无效输入...") << endl;
+			system("pause");
+			continue;
+		}
 
-	Helper::cmdSo.pfnCmds[input - 1]();
-	system("pause");
+		Helper::cmdSo.pfnCmds[input - 1]();
+		system("pause");
+	}
+	
 	return 0;
 }

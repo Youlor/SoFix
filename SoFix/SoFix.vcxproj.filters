@@ -44,6 +44,9 @@
     <ClCompile Include="linker.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="ElfBuilder.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Helper.h">
@@ -62,6 +65,9 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="linker.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="ElfBuilder.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

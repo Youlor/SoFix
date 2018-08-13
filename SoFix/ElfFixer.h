@@ -50,42 +50,42 @@ private:
 public:
 	ElfFixer(soinfo *si, const char *sopath, const char *fixedpath);
 	~ElfFixer();
-	bool fix();
-	bool write();
+	bool Fix();
+	bool Write();
 
 private:
 	//修复Ehdr
-	bool fixEhdr();
+	bool FixEhdr();
 
 	//修复Phdr
-	bool fixPhdr();
+	bool FixPhdr();
 
 	//修复整个Shdr, 名称, 文件偏移
-	bool fixShdr();
+	bool FixShdr();
 
 	//从Phdr中修复部分Shdr: .dynamic, .arm.exidx
-	bool fixShdrFromPhdr();
+	bool FixShdrFromPhdr();
 
 	//从.dynamic中修复部分Shdr:  .hash, .dynsym, .dynstr, .rel.dyn, .rel.plt, .init_array, fini_array
-	bool fixShdrFromDynamic();
+	bool FixShdrFromDynamic();
 
 	//根据.dynamic和.dynsym引用的字符串来确定.dynstr节的大小
-	bool fixDynstr();
+	bool FixDynstr();
 
 	//根据.hash,.rel.plt,.rel.dyn引用的符号信息来确定.dynsym, .dynstr节的大小
-	bool fixDynsym();
+	bool FixDynsym();
 
 	//根据Shdr的关系修复 .plt, .text, .got, .data, .bss
-	bool fixShdrFromShdr();
+	bool FixShdrFromShdr();
 
 	//将文件中记录的内存地址转为文件偏移, -1表示失败
-	Elf32_Off addrToOff(Elf32_Addr addr);
+	Elf32_Off AddrToOff(Elf32_Addr addr);
 
-	Elf32_Addr offToAddr(Elf32_Off off);
+	Elf32_Addr OffToAddr(Elf32_Off off);
 
 	//返回文件中记录的内存地址所在的节, -1表示没找到
-	int findShIdx(Elf32_Addr addr);
+	int FindShIdx(Elf32_Addr addr);
 
-	bool fixRel();
+	bool FixRel();
 };
 

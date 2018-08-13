@@ -4,19 +4,25 @@
 #include "ElfFixer.h"
 #include <QSettings>
 #include "Util.h"
+#include "ElfBuilder.h"
 
 #define QSTR8BIT(s) (QString::fromLocal8Bit(s))
 
 const Helper::Command Helper::cmdSo =
 {
-	QSTR8BIT("------------Android Arm so Fix Tool, By Youlor, Reference ThomasKing------------\n"
-	"请选择修复文件类型:\n1.正常So文件\n2.Dump So文件(需正常so文件辅助修复)"
-	"\n3.Dump So文件(直接修复)"),
-	3,
-	{ elfFixNormalSo , elfFixDumpSoFromNormal, elfFixDumpSo }
+	QSTR8BIT("------------Android Arm so Fix Tool, By Youlor------------\n"
+	"请选择修复文件类型:\n1.正常So文件(Reference ThomasKing)\n2.Dump So文件(需正常so文件辅助修复, 适用于解密so在内存中修复后的情况)"
+	"\n3.Dump So文件(还原为正常so文件, 慎用!)\n4.重建so文件(需要配置json文件)\n5.退出"),
+	5,
+	{ ElfFixNormalSo , ElfFixDumpSoFromNormal, ElfFixDumpSo , ElfRebuild, Exit}
 };
 
-void Helper::elfFixNormalSo()
+void Helper::Exit()
+{
+	exit(0);
+}
+
+void Helper::ElfFixNormalSo()
 {
 	QTextStream qout(stdout);
 	QTextStream qin(stdin);
@@ -28,7 +34,7 @@ void Helper::elfFixNormalSo()
 	elfFixSo(sopath.toLocal8Bit(), nullptr);
 }
 
-void Helper::elfFixDumpSoFromNormal()
+void Helper::ElfFixDumpSoFromNormal()
 {
 	QTextStream qout(stdout);
 	QTextStream qin(stdin);
@@ -43,6 +49,27 @@ void Helper::elfFixDumpSoFromNormal()
 
 	elfFixSo(sopath.toLocal8Bit(), dumppath.toLocal8Bit());
 }
+
+void Helper::ElfRebuild()
+{
+	QTextStream qout(stdout);
+	QTextStream qin(stdin);
+	QString json_path;
+
+	qout << QSTR8BIT("请输入用于重建的json文件:") << endl;
+	qin >> json_path;
+
+	ElfBuilder elf_bd(json_path);
+	if (elf_bd.Build())
+	{
+		qout << QSTR8BIT("重建成功!") << endl;
+	}
+	else
+	{
+		qout << QSTR8BIT("重建失败!") << endl;
+	}
+}
+
 
 bool Helper::elfDumpSoToNormal(QString &dumppath)
 {
@@ -89,7 +116,9 @@ bool Helper::elfDumpSoToNormal(QString &dumppath)
 				file_length = PAGE_END(file_length);
 			}
 
-			if (file_length != 0) //从内存写回文件
+			//从内存写回文件, 如果一个文件块被映射到多个内存块, 
+			//并且内存块被修改过, 这么做会出现问题
+			if (file_length != 0)
 			{
 				normalFile.seek(file_page_start);
 				normalFile.write((char *)seg_page_start, file_length);
@@ -104,7 +133,7 @@ bool Helper::elfDumpSoToNormal(QString &dumppath)
 	return true;
 }
 
-void Helper::elfFixDumpSo()
+void Helper::ElfFixDumpSo()
 {
 	QTextStream qout(stdout);
 	QTextStream qin(stdin);
@@ -160,13 +189,13 @@ bool Helper::elfFixSo(const char *sopath, const char *dumppath)
 			QString fixedpath = QSTR8BIT(name) + ".fixed";
 			
 			ElfFixer elf_fixer(si, sopath, fixedpath.toLocal8Bit());
-			if (elf_fixer.fix() && elf_fixer.write())
+			if (elf_fixer.Fix() && elf_fixer.Write())
 			{
 				qout << QSTR8BIT("修复成功!修复后文件路径: ") + fixedpath << endl;
 			}
 			else
 			{
-				qout << QSTR8BIT("so修复失败, 可能不是有效的so文件(不包含DT_DYNAMIC, DT_HASH, DT_STRTAB, DT_SYMTAB)") + fixedpath << endl;
+				qout << QSTR8BIT("so修复失败, 可能不是有效的so文件(不包含PT_DYNAMIC, DT_HASH, DT_STRTAB, DT_SYMTAB)") + fixedpath << endl;
 			}
 		}
 	}

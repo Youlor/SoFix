@@ -1,0 +1,75 @@
+{
+    "readme":
+    {
+        "comment":"根据so的必要信息重建so文件, 该json文件为配置文件, By Youlor",
+        "comment2":"该对象不用填写, 仅仅用于说明",
+        "comment3":"所有整型字段均视为16进制",
+        "file name":"重建后的so的路径, 可以是相对路径",
+        "load_bias":"实际加载地址与期望加载地址的偏移",
+        "program headers":"程序头, PT_NULL, PT_PHDR, PT_DYNAMIC将被无视",
+        "program headers2":"程序头的每一项与Elf32_Phdr相对应, p_vaddr为虚拟地址",
+        "raw_file":"应该给出实际映射的文件即按页对齐",
+        "dynamic section":".dynamic节的数据项, 没有则填写null或者删除该项",
+        "dynamic section2":"地址为真实加载地址, 程序中会根据load_bias转换为虚拟地址",
+        "DT_NEEDED":"DT_NEEDED的值应该填写依赖so库的名称字符串的真实加载地址",
+        "end":"具体可以参考下面这个例子"
+    },
+
+    "file name": "txsec.so",
+    "load_bias": "75f67000",
+
+    "program headers":
+    [
+        {
+            "p_type":"1",
+            "p_offset":"88",
+            "p_vaddr":"88",
+            "p_paddr":"88",
+            "p_filesz":"1e188",
+            "p_memsz":"1e188",
+            "p_flags":"5",
+            "p_align":"1000",
+            "raw_file":"load1.so"
+        },
+        
+        {
+            "p_type":"1",
+            "p_offset":"117ec",
+            "p_vaddr":"1f470",
+            "p_paddr":"1f470",
+            "p_filesz":"0c18",
+            "p_memsz":"18c8",
+            "p_flags":"6",
+            "p_align":"1000",
+            "raw_file":"load2.so"
+        }
+    ],
+    
+    "dynamic section":
+    {
+        "DT_HASH":"75F6A058",
+        "DT_STRTAB":"75F689D8",
+        "DT_STRSZ":"1680",
+        "DT_SYMTAB":"75F67148",
+        "DT_JMPREL":"75F6B978",
+        "DT_PLTRELSZ":"19C",
+        "DT_REL":"75F6AAA0",
+        "DT_RELSZ":"ED8",
+        "DT_INIT":null,
+        "DT_FINI":null,
+        "DT_INIT_ARRAY":"75F864D8",
+        "DT_INIT_ARRAYSZ":"14",
+        "DT_FINI_ARRAY":null,
+        "DT_FINI_ARRAYSZ":null,
+        "DT_NEEDED": 
+        [
+          "75F6A011",
+          "75F6A01A",
+          "75F6A022",
+          "75F6A02C",
+          "75F6A039",
+          "75F6A041"
+        ]
+    }
+
+}
