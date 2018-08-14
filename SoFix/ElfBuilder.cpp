@@ -75,11 +75,11 @@ bool ElfBuilder::ReadJson()
 			}
 			if (obj.contains("p_vaddr"))
 			{
-				phdr.p_vaddr = obj.value("p_vaddr").toString("0").toUInt(nullptr, 16);
+				phdr.p_vaddr = obj.value("p_vaddr").toString("0").toUInt(nullptr, 16) - load_bias_;
 			}
 			if (obj.contains("p_paddr"))
 			{
-				phdr.p_paddr = obj.value("p_paddr").toString("0").toUInt(nullptr, 16);
+				phdr.p_paddr = obj.value("p_paddr").toString("0").toUInt(nullptr, 16) - load_bias_;
 			}
 			if (obj.contains("p_filesz"))
 			{
@@ -228,6 +228,35 @@ bool ElfBuilder::ReadJson()
 				dyn.d_un.d_ptr = subArray.at(i).toString("0").toUInt(nullptr, 16) - load_bias_ - strtab;
 				dyns_.push_back(dyn);
 			}
+		}
+	}
+
+	if (rootObj.contains("options"))
+	{
+		QJsonArray subArray = rootObj.value("options").toArray();
+		for (int i = 0; i < subArray.size(); i++)
+		{
+			QJsonObject obj = subArray.at(i).toObject();
+			Option op = { 0 };
+
+			if (obj.contains("offset"))
+			{
+				op.offset = obj.value("offset").toString("0").toUInt(nullptr, 16);
+			}
+			if (obj.contains("item_size"))
+			{
+				op.item_size = obj.value("item_size").toString("0").toUInt(nullptr, 16);
+			}
+			if (obj.contains("count"))
+			{
+				op.count = obj.value("count").toString("0").toUInt(nullptr, 16);
+			}
+			if (obj.contains("bias"))
+			{
+				op.bias = obj.value("bias").toString("0").toInt(nullptr, 16);
+			}
+
+			options_.push_back(op);
 		}
 	}
 
@@ -390,8 +419,29 @@ bool ElfBuilder::Write()
 		}
 	}
 
+	//根据options_修正一些字节
+	for (Option &op : options_)
+	{
+		sofile_.seek(op.offset);
+		char *olds = new char[op.count * op.item_size];
+		sofile_.read((char *)olds, op.item_size * op.count);
+		char *tmp = olds;
+		
+		for (int i = 0; i < op.count; i++)
+		{
+			*(Elf32_Addr *)tmp += op.bias;
+			tmp += op.item_size;
+		}
+
+		sofile_.seek(op.offset);
+		sofile_.write((char *)olds, op.item_size * op.count);
+		delete[] olds;
+	}
+	
+
 	//到此, so的写入已经完成
 	sofile_.close();
+
 	return true;
 }
 

@@ -13,6 +13,7 @@ int main(int argc, char *argv[])
 	while (true)
 	{
 		qout << Helper::cmdSo.description << endl;
+		qin.flush();
 		qin >> input;
 		if (input > Helper::cmdSo.cmdCount || input < 1)
 		{
