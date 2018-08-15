@@ -260,6 +260,48 @@ bool ElfBuilder::ReadJson()
 		}
 	}
 
+	if (rootObj.contains("rel_option"))
+	{
+		QJsonObject obj = rootObj.value("rel_option").toObject();
+		if (obj.contains("offset"))
+		{
+			rel_option_.offset = obj.value("offset").toString("0").toUInt(nullptr, 16);
+		}
+		if (obj.contains("count"))
+		{
+			rel_option_.count = obj.value("count").toString("0").toUInt(nullptr, 16);
+		}
+		if (obj.contains("bias"))
+		{
+			rel_option_.bias = obj.value("bias").toString("0").toInt(nullptr, 16);
+		}
+		if (obj.contains("addr_to_off"))
+		{
+			rel_option_.addr_to_off = obj.value("addr_to_off").toString("0").toInt(nullptr, 16);
+		}
+	}
+
+	if (rootObj.contains("rel_plt_option"))
+	{
+		QJsonObject obj = rootObj.value("rel_plt_option").toObject();
+		if (obj.contains("offset"))
+		{
+			rel_plt_option_.offset = obj.value("offset").toString("0").toUInt(nullptr, 16);
+		}
+		if (obj.contains("count"))
+		{
+			rel_plt_option_.count = obj.value("count").toString("0").toUInt(nullptr, 16);
+		}
+		if (obj.contains("bias"))
+		{
+			rel_plt_option_.bias = obj.value("bias").toString("0").toInt(nullptr, 16);
+		}
+		if (obj.contains("addr_to_off"))
+		{
+			rel_plt_option_.addr_to_off = obj.value("addr_to_off").toString("0").toInt(nullptr, 16);
+		}
+	}
+
 	return true;
 }
 
@@ -275,6 +317,7 @@ bool ElfBuilder::BuildInfo()
 	ehdr_.e_type = ET_DYN;
 	ehdr_.e_machine = EM_ARM;
 	ehdr_.e_version = EV_CURRENT;
+	ehdr_.e_entry = 0;
 	ehdr_.e_phoff = sizeof(Elf32_Ehdr);
 	ehdr_.e_shoff = 0;	//非必需字段
 	ehdr_.e_flags = 0x5000000;
@@ -422,7 +465,7 @@ bool ElfBuilder::Write()
 	//根据options_修正一些字节
 	for (Option &op : options_)
 	{
-		sofile_.seek(op.offset);
+		sofile_.seek(op.offset + PAGE_END(ph_myload_.p_offset + ph_myload_.p_filesz));
 		char *olds = new char[op.count * op.item_size];
 		sofile_.read((char *)olds, op.item_size * op.count);
 		char *tmp = olds;
@@ -433,12 +476,56 @@ bool ElfBuilder::Write()
 			tmp += op.item_size;
 		}
 
-		sofile_.seek(op.offset);
+		sofile_.seek(op.offset + PAGE_END(ph_myload_.p_offset + ph_myload_.p_filesz));
 		sofile_.write((char *)olds, op.item_size * op.count);
 		delete[] olds;
 	}
 	
+	//根据rel_bias_修正rel.dyn重定位项的偏移
+	{
+		sofile_.seek(rel_option_.offset + PAGE_END(ph_myload_.p_offset + ph_myload_.p_filesz));
+		char *olds = new char[rel_option_.count * sizeof(Elf32_Rel)];
+		sofile_.read((char *)olds, sizeof(Elf32_Rel) * rel_option_.count);
+		Elf32_Rel *rel = (Elf32_Rel *)olds;
 
+		for (int i = 0; i < rel_option_.count; i++)
+		{
+			Elf32_Addr addr = 0;
+			rel->r_offset += rel_option_.addr_to_off;
+
+			sofile_.seek(rel->r_offset + PAGE_END(ph_myload_.p_offset + ph_myload_.p_filesz));
+			sofile_.read((char *)&addr, sizeof(Elf32_Addr));
+			addr += rel_option_.bias;
+			sofile_.seek(rel->r_offset + PAGE_END(ph_myload_.p_offset + ph_myload_.p_filesz));
+			sofile_.write((char *)&addr, sizeof(Elf32_Addr));
+			rel++;
+		}
+
+		delete[] olds;
+	}
+
+	//根据relplt_options修正rel.plt重定位项的偏移
+	{
+		sofile_.seek(rel_plt_option_.offset + PAGE_END(ph_myload_.p_offset + ph_myload_.p_filesz));
+		char *olds = new char[rel_plt_option_.count * sizeof(Elf32_Rel)];
+		sofile_.read((char *)olds, sizeof(Elf32_Rel) * rel_plt_option_.count);
+		Elf32_Rel *rel = (Elf32_Rel *)olds;
+
+		for (int i = 0; i < rel_plt_option_.count; i++)
+		{
+			Elf32_Addr addr = 0;
+			rel->r_offset += rel_plt_option_.addr_to_off;
+
+			sofile_.seek(rel->r_offset + PAGE_END(ph_myload_.p_offset + ph_myload_.p_filesz));
+			sofile_.read((char *)&addr, sizeof(Elf32_Addr));
+			addr += rel_plt_option_.bias;
+			sofile_.seek(rel->r_offset + PAGE_END(ph_myload_.p_offset + ph_myload_.p_filesz));
+			sofile_.write((char *)&addr, sizeof(Elf32_Addr));
+			rel++;
+		}
+
+		delete[] olds;
+	}
 	//到此, so的写入已经完成
 	sofile_.close();
 

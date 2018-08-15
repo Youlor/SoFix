@@ -7,13 +7,17 @@
 class ElfBuilder
 {
 private:
-	struct Option
+	typedef struct Option
 	{
 		Elf32_Off offset;
-		Elf32_Word item_size;
 		Elf32_Word count;
 		int bias;
-	};
+		union 
+		{
+			Elf32_Word item_size;
+			int addr_to_off;
+		};	
+	} Option;
 
 private:
 	QString sopath_;
@@ -34,6 +38,8 @@ private:
 	Elf32_Phdr ph_dynamic_;
 
 	QVector<Option> options_;
+	Option rel_option_;
+	Option rel_plt_option_;
 
 public:
 	ElfBuilder(QString json);
